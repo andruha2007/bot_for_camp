@@ -36,6 +36,9 @@ class Config:
     LP_WAIT_TIME: int = int(os.getenv("LP_WAIT_TIME", "25"))
     LP_VERSION: str = os.getenv("LP_VERSION", "5.131")
 
+    # === Прокси (опционально) ===
+    HTTPS_PROXY: str = os.getenv("HTTPS_PROXY", "")
+
     # === Логирование ===
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 

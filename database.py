@@ -1,10 +1,7 @@
-import logging
-import random
-import sqlite3
-import string
+# database.py
+import logging, random, sqlite3, string
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -18,811 +15,754 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA synchronous = FULL")
-        conn.execute("PRAGMA busy_timeout = 5000")
         try:
             yield conn
             conn.commit()
-        except Exception as exc:
+        except Exception as e:
             conn.rollback()
-            logger.error("DB transaction failed: %s", exc, exc_info=True)
+            logger.error("DB Error: %s", e, exc_info=True)
             raise
         finally:
             conn.close()
 
     def _init_db(self):
         with self._get_conn() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS participants (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER UNIQUE,
-                    first_name TEXT NOT NULL,
-                    last_name TEXT NOT NULL,
-                    personal_code TEXT UNIQUE NOT NULL,
-                    role TEXT CHECK(role IN ('admin', 'super_admin', 'participant')) DEFAULT 'participant',
-                    balance INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE,
+                    first_name TEXT, last_name TEXT, personal_code TEXT UNIQUE,
+                    role TEXT DEFAULT 'participant', balance INTEGER DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS pre_registered_participants (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, first_name TEXT, last_name TEXT,
+                    personal_code TEXT UNIQUE, is_used BOOLEAN DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS admin_invites (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    first_name TEXT NOT NULL,
-                    last_name TEXT NOT NULL,
-                    personal_code TEXT UNIQUE NOT NULL,
+                    invite_code TEXT UNIQUE,
+                    role TEXT DEFAULT 'admin',
                     is_used BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
                 CREATE TABLE IF NOT EXISTS events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    team_size INTEGER NOT NULL,
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT,
+                    min_team_size INTEGER, max_team_size INTEGER, is_active BOOLEAN DEFAULT 1,
+                    is_fair BOOLEAN DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS event_registrations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event_id INTEGER REFERENCES events(id),
-                    participant_id INTEGER REFERENCES participants(id),
-                    team_members TEXT NOT NULL,
-                    registration_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_frozen BOOLEAN DEFAULT 0,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, participant_id INTEGER,
+                    team_members TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(event_id, participant_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS mini_courses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    max_participants INTEGER NOT NULL,
-                    is_published BOOLEAN DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT,
+                    max_participants INTEGER, is_published BOOLEAN DEFAULT 0
                 );
 
-                CREATE TABLE IF NOT EXISTS time_slots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    mini_course_id INTEGER REFERENCES mini_courses(id),
-                    time TEXT NOT NULL,
-                    UNIQUE(mini_course_id, time)
-                );
+                CREATE TABLE IF NOT EXISTS time_slots (id INTEGER PRIMARY KEY AUTOINCREMENT, mini_course_id INTEGER, time TEXT);
 
                 CREATE TABLE IF NOT EXISTS mini_course_registrations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    mini_course_id INTEGER REFERENCES mini_courses(id),
-                    participant_id INTEGER REFERENCES participants(id),
-                    time_slot_id INTEGER REFERENCES time_slots(id),
-                    registration_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_frozen BOOLEAN DEFAULT 0,
-                    UNIQUE(mini_course_id, participant_id)
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, mini_course_id INTEGER,
+                    participant_id INTEGER, time_slot_id INTEGER, UNIQUE(mini_course_id, participant_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS balance_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    participant_id INTEGER REFERENCES participants(id),
-                    amount INTEGER NOT NULL,
-                    description TEXT,
-                    created_by INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, participant_id INTEGER, amount INTEGER, description TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
                 CREATE TABLE IF NOT EXISTS complaints (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, participant_id INTEGER, message TEXT, is_resolved BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS fair_settings (
+                    key TEXT PRIMARY KEY, value TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS fair_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    participant_id INTEGER REFERENCES participants(id),
-                    message TEXT NOT NULL,
-                    is_resolved BOOLEAN DEFAULT 0,
+                    user_id INTEGER REFERENCES participants(user_id),
+                    team_name TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    price INTEGER NOT NULL,
+                    is_active BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
-                INSERT OR IGNORE INTO settings (key, value) VALUES
-                    ('registration_freeze_time', '2'),
-                    ('event_team_size', '5');
-                """
-            )
+                CREATE TABLE IF NOT EXISTS fair_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id INTEGER,
+                    buyer_id INTEGER,
+                    seller_user_id INTEGER,
+                    amount INTEGER,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+            """)
+            # Миграция: добавить created_at в event_registrations, если колонки нет
+            cols = [c[1] for c in conn.execute("PRAGMA table_info(event_registrations)").fetchall()]
+            if 'created_at' not in cols:
+                conn.execute("ALTER TABLE event_registrations ADD COLUMN created_at TIMESTAMP")
+                conn.execute("UPDATE event_registrations SET created_at = datetime('now') WHERE created_at IS NULL")
+            cols = [c[1] for c in conn.execute("PRAGMA table_info(mini_course_registrations)").fetchall()]
+            if 'created_at' not in cols:
+                conn.execute("ALTER TABLE mini_course_registrations ADD COLUMN created_at TIMESTAMP")
+                conn.execute("UPDATE mini_course_registrations SET created_at = datetime('now') WHERE created_at IS NULL")
+            conn.execute("""INSERT OR IGNORE INTO fair_settings (key, value) VALUES
+                    ('is_active', '0'),
+                    ('active_event_id', '');
+            """)
             self._migrate(conn)
-            conn.executescript(
-                """
-                CREATE INDEX IF NOT EXISTS idx_participants_user_id ON participants(user_id);
-                CREATE INDEX IF NOT EXISTS idx_participants_personal_code ON participants(personal_code);
-                CREATE INDEX IF NOT EXISTS idx_event_registrations_event ON event_registrations(event_id);
-                CREATE INDEX IF NOT EXISTS idx_mini_course_registrations_course ON mini_course_registrations(mini_course_id);
-                CREATE INDEX IF NOT EXISTS idx_balance_history_participant ON balance_history(participant_id);
-                """
-            )
 
     def _migrate(self, conn: sqlite3.Connection):
-        def columns(table: str) -> set[str]:
-            return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
+        if "team_size" in cols and "min_team_size" not in cols:
+            conn.execute("ALTER TABLE events ADD COLUMN min_team_size INTEGER DEFAULT 3")
+            conn.execute("ALTER TABLE events ADD COLUMN max_team_size INTEGER DEFAULT 5")
+            conn.execute("UPDATE events SET min_team_size = team_size, max_team_size = team_size WHERE team_size IS NOT NULL")
+        if "is_fair" not in cols:
+            conn.execute("ALTER TABLE events ADD COLUMN is_fair BOOLEAN DEFAULT 0")
 
     def generate_personal_code(self) -> str:
-        """Generate a unique personal code in format: 1 letter, 3 digits, 2 letters (e.g., a123bc)"""
         while True:
-            letter1 = random.choice(string.ascii_lowercase)
-            digits = ''.join(random.choices(string.digits, k=3))
-            letters = ''.join(random.choices(string.ascii_lowercase, k=2))
-            code = f"{letter1}{digits}{letters}"
-
+            code = f"{random.choice(string.ascii_lowercase)}{''.join(random.choices(string.digits, k=3))}{''.join(random.choices(string.ascii_lowercase, k=2))}"
             with self._get_conn() as conn:
-                existing = conn.execute("SELECT 1 FROM participants WHERE personal_code=?", (code,)).fetchone()
-                if not existing:
+                if not conn.execute("SELECT 1 FROM participants WHERE personal_code=?", (code,)).fetchone():
                     return code
 
-    def register_participant(self, user_id: int, first_name: str, last_name: str) -> Tuple[bool, str, Optional[str]]:
-        """Register a new participant with a unique personal code"""
-        if not first_name or not last_name:
-            return False, "Имя и фамилия обязательны", None
+    def generate_admin_invite_code(self, role: str = 'admin') -> str:
+        while True:
+            code = f"{random.choice(string.ascii_uppercase)}{''.join(random.choices(string.digits, k=4))}{''.join(random.choices(string.ascii_uppercase, k=2))}"
+            with self._get_conn() as conn:
+                if not conn.execute("SELECT 1 FROM admin_invites WHERE invite_code=?", (code,)).fetchone():
+                    conn.execute("INSERT INTO admin_invites (invite_code, role) VALUES (?, ?)", (code, role))
+                    return code
 
-        personal_code = self.generate_personal_code()
-
+    def sync_admin_from_config(self, user_id: int, role: str):
         with self._get_conn() as conn:
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO participants (user_id, first_name, last_name, personal_code, role)
-                    VALUES (?, ?, ?, ?, 'participant')
-                    """,
-                    (user_id, first_name.strip(), last_name.strip(), personal_code)
-                )
-                return True, f"Вы успешно зарегистрированы! Ваш персональный код: {personal_code}", personal_code
-            except sqlite3.IntegrityError:
-                # User already exists
-                existing = conn.execute("SELECT personal_code FROM participants WHERE user_id=?", (user_id,)).fetchone()
-                if existing:
-                    return True, f"Вы уже зарегистрированы. Ваш персональный код: {existing['personal_code']}", existing['personal_code']
-                return False, "Ошибка регистрации. Пожалуйста, попробуйте позже.", None
+            ex = conn.execute("SELECT * FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if ex:
+                if ex['role'] != role:
+                    conn.execute("UPDATE participants SET role=? WHERE user_id=?", (role, user_id))
+            else:
+                conn.execute("INSERT INTO participants (user_id, first_name, last_name, personal_code, role) VALUES (?, 'Admin', 'Config', ?, ?)",
+                             (user_id, self.generate_personal_code(), role))
 
-    def get_participant_by_user_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def add_admin_by_vk_id(self, user_id: int, first_name: str, last_name: str, role: str = 'admin') -> Tuple[bool, str]:
+        with self._get_conn() as conn:
+            ex = conn.execute("SELECT * FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if ex:
+                if ex['role'] != role:
+                    conn.execute("UPDATE participants SET role=? WHERE user_id=?", (role, user_id))
+                return True, f"{first_name} {last_name} уже в базе. Роль обновлена."
+            conn.execute("INSERT INTO participants (user_id, first_name, last_name, personal_code, role) VALUES (?, ?, ?, ?, ?)",
+                         (user_id, first_name, last_name, self.generate_personal_code(), role))
+            return True, f"{first_name} {last_name} назначен {role}."
+
+    def get_participant_by_user_id(self, user_id: int) -> Optional[Dict]:
         with self._get_conn() as conn:
             row = conn.execute("SELECT * FROM participants WHERE user_id=?", (user_id,)).fetchone()
             return dict(row) if row else None
 
-    def get_participant_by_personal_code(self, personal_code: str) -> Optional[Dict[str, Any]]:
+    def get_all_participants(self) -> List[Dict]:
         with self._get_conn() as conn:
-            row = conn.execute("SELECT * FROM participants WHERE personal_code=?", (personal_code,)).fetchone()
-            return dict(row) if row else None
+            return [dict(r) for r in conn.execute("SELECT id, user_id, first_name, last_name FROM participants WHERE role='participant' AND user_id IS NOT NULL ORDER BY last_name").fetchall()]
 
-    def get_participant_by_name(self, first_name: str, last_name: str) -> Optional[Dict[str, Any]]:
+    def get_unregistered_participants_for_event(self, event_id: int, current_user_id: int) -> List[Dict]:
+        """Получить участников, НЕ входящих ни в одну команду мероприятия (кроме текущего)"""
         with self._get_conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM participants WHERE first_name=? AND last_name=?",
-                (first_name.strip(), last_name.strip())
-            ).fetchone()
-            return dict(row) if row else None
+            current_p = conn.execute("SELECT id FROM participants WHERE user_id=?", (current_user_id,)).fetchone()
+            current_id = current_p['id'] if current_p else -1
 
-    def get_participant_balance(self, participant_id: int) -> int:
+            free = conn.execute("""
+                SELECT p.id, p.user_id, p.first_name, p.last_name
+                FROM participants p
+                WHERE p.role='participant'
+                  AND p.user_id IS NOT NULL
+                  AND p.id != ?
+                  AND p.id NOT IN (
+                    SELECT participant_id FROM event_registrations WHERE event_id = ?
+                  )
+                ORDER BY p.last_name
+            """, (current_id, event_id)).fetchall()
+            return [dict(r) for r in free]
+
+    def get_my_team_for_event(self, event_id: int, user_id: int) -> Optional[Dict]:
+        """Проверяет, состоит ли пользователь в какой-либо команде мероприятия"""
         with self._get_conn() as conn:
-            row = conn.execute("SELECT balance FROM participants WHERE id=?", (participant_id,)).fetchone()
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return None
+            # Своя строка в event_registrations — пользователь в команде (капитан или участник)
+            my_row = conn.execute("""
+                SELECT er.*, p2.first_name, p2.last_name
+                FROM event_registrations er
+                JOIN participants p2 ON p2.id = er.participant_id
+                WHERE er.event_id = ? AND er.participant_id = ?
+            """, (event_id, p['id'])).fetchone()
+            return dict(my_row) if my_row else None
+
+    def get_my_mini_course_team(self, mc_id: int, ts_id: int, user_id: int) -> Optional[Dict]:
+        """Получить информацию о команде пользователя на мини-курс"""
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return None
+            reg = conn.execute("""
+                SELECT mcr.*, p2.first_name, p2.last_name
+                FROM mini_course_registrations mcr
+                JOIN participants p2 ON p2.id = mcr.participant_id
+                WHERE mcr.mini_course_id = ? AND mcr.time_slot_id = ? AND mcr.participant_id = ?
+            """, (mc_id, ts_id, p['id'])).fetchone()
+            return dict(reg) if reg else None
+
+    def can_cancel_registration(self, event_id: int, user_id: int) -> bool:
+        """Проверка, можно ли отменить регистрацию (в течение 2 часов)"""
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return False
+            reg = conn.execute("""
+                SELECT created_at
+                FROM event_registrations
+                WHERE event_id = ? AND participant_id = ?
+            """, (event_id, p['id'])).fetchone()
+            if not reg:
+                return False
+
+            # Проверка 2-х часового лимита
+            import datetime
+            created_at = datetime.datetime.fromisoformat(reg['created_at'].replace('T', ' '))
+            return (datetime.datetime.now() - created_at).total_seconds() < 7200
+
+    def can_cancel_mini_course_registration(self, mc_id: int, ts_id: int, user_id: int) -> bool:
+        """Проверка, можно ли отменить регистрацию на курс (в течение 2 часов)"""
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return False
+            reg = conn.execute("""
+                SELECT created_at
+                FROM mini_course_registrations
+                WHERE mini_course_id = ? AND time_slot_id = ? AND participant_id = ?
+            """, (mc_id, ts_id, p['id'])).fetchone()
+            if not reg:
+                return False
+
+            import datetime
+            created_at = datetime.datetime.fromisoformat(reg['created_at'].replace('T', ' '))
+            return (datetime.datetime.now() - created_at).total_seconds() < 7200
+
+    def auto_distribute_participants(self, event_id: int):
+        """Равномерное распределение участников без команды по существующим командам"""
+        import random
+        with self._get_conn() as conn:
+            ev = self.get_event(event_id)
+            if not ev:
+                return 0
+
+            unregistered = conn.execute("""
+                SELECT p.id, p.first_name, p.last_name
+                FROM participants p
+                WHERE p.role='participant'
+                AND p.id NOT IN (
+                    SELECT participant_id FROM event_registrations WHERE event_id = ?
+                )
+            """, (event_id,)).fetchall()
+
+            if not unregistered:
+                return 0
+
+            teams = conn.execute("""
+                SELECT er.participant_id, er.team_members
+                FROM event_registrations er
+                WHERE er.event_id = ?
+            """, (event_id,)).fetchall()
+
+            if not teams:
+                return 0
+
+            # Считаем текущий размер каждой команды
+            team_sizes = []
+            for t in teams:
+                members = [m.strip() for m in (t['team_members'] or '').split(',') if m.strip()]
+                team_sizes.append({'participant_id': t['participant_id'], 'size': len(members)})
+
+            distributed = 0
+            shuffled = list(unregistered)
+            random.shuffle(shuffled)
+
+            for participant in shuffled:
+                team_sizes.sort(key=lambda x: x['size'])
+                best = None
+                for ts in team_sizes:
+                    if ts['size'] < ev['max_team_size']:
+                        best = ts
+                        break
+                if not best:
+                    break
+
+                # Создаём строку участника в event_registrations
+                conn.execute(
+                    "INSERT OR IGNORE INTO event_registrations (event_id, participant_id, team_members) VALUES (?, ?, ?)",
+                    (event_id, participant['id'], "")
+                )
+
+                # Обновляем team_members у капитана (первая запись в team_sizes)
+                cap_row = conn.execute(
+                    "SELECT team_members FROM event_registrations WHERE event_id=? AND participant_id=?",
+                    (event_id, best['participant_id'])
+                ).fetchone()
+                old = (cap_row['team_members'] or '').strip()
+                new_members = (f"{old}, {participant['last_name']} {participant['first_name']}").lstrip(', ')
+                conn.execute(
+                    "UPDATE event_registrations SET team_members=? WHERE event_id=? AND participant_id=?",
+                    (new_members, event_id, best['participant_id'])
+                )
+                best['size'] += 1
+                distributed += 1
+
+            return distributed
+
+    def auto_distribute_mini_course_participants(self, mc_id: int, ts_id: int):
+        """Автоматическое распределение участников на мини-курс"""
+        with self._get_conn() as conn:
+            mc = self.get_mini_course(mc_id)
+            if not mc:
+                return 0
+
+            # Участники, не записанные на этот курс и слот
+            unregistered = conn.execute("""
+                SELECT p.id, p.first_name, p.last_name
+                FROM participants p
+                WHERE p.role='participant'
+                AND p.id NOT IN (
+                    SELECT participant_id FROM mini_course_registrations WHERE mini_course_id = ? AND time_slot_id = ?
+                )
+            """, (mc_id, ts_id)).fetchall()
+
+            if not unregistered:
+                return 0
+
+            # Существующие команды
+            teams = conn.execute("""
+                SELECT participant_id
+                FROM mini_course_registrations
+                WHERE mini_course_id = ? AND time_slot_id = ?
+            """, (mc_id, ts_id)).fetchall()
+
+            if not teams:
+                return 0
+
+            # Распределение по командам с свободными местами
+            distributed = 0
+            for participant in unregistered:
+                # Ищем команду с минимальным количеством участников
+                best_team = None
+                min_count = float('inf')
+
+                for team in teams:
+                    # Подсчитываем участников в этой команде
+                    count = conn.execute("""
+                        SELECT COUNT(*) as cnt
+                        FROM mini_course_registrations
+                        WHERE mini_course_id = ? AND time_slot_id = ? AND participant_id = ?
+                    """, (mc_id, ts_id, team['participant_id'])).fetchone()['cnt']
+
+                    if count < mc['max_participants'] and count < min_count:
+                        min_count = count
+                        best_team = team
+
+                if best_team:
+                    # Записываем участника в команду
+                    conn.execute("""
+                        INSERT OR IGNORE INTO mini_course_registrations (mini_course_id, participant_id, time_slot_id)
+                        VALUES (?, ?, ?)
+                    """, (mc_id, participant['id'], ts_id))
+                    distributed += 1
+
+            return distributed
+
+    def get_participant_balance(self, pid: int) -> int:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT balance FROM participants WHERE id=?", (pid,)).fetchone()
             return row['balance'] if row else 0
 
-    def get_balance_history(self, participant_id: int) -> List[Dict[str, Any]]:
+    def add_balance_to_participant(self, participant_id: int, amount: int, description: str = "Пополнение баланса"):
         with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM balance_history WHERE participant_id=? ORDER BY created_at DESC",
-                    (participant_id,)
-                ).fetchall()
-            ]
+            conn.execute("UPDATE participants SET balance = balance + ? WHERE id=?", (amount, participant_id))
+            conn.execute("INSERT INTO balance_history (participant_id, amount, description) VALUES (?, ?, ?)",
+                         (participant_id, amount, description))
 
-    def update_balance(self, participant_id: int, amount: int, description: str, created_by: Optional[int] = None) -> bool:
+    def create_event(self, name: str, desc: str, min_size: int, max_size: int, is_fair: bool = False) -> int:
         with self._get_conn() as conn:
-            # Update participant balance
-            conn.execute(
-                "UPDATE participants SET balance = balance + ? WHERE id=?",
-                (amount, participant_id)
-            )
+            return conn.execute("INSERT INTO events (name, description, min_team_size, max_team_size, is_fair) VALUES (?, ?, ?, ?, ?)",
+                               (name, desc, min_size, max_size, 1 if is_fair else 0)).lastrowid
 
-            # Add to history
-            conn.execute(
-                """
-                INSERT INTO balance_history (participant_id, amount, description, created_by)
-                VALUES (?, ?, ?, ?)
-                """,
-                (participant_id, amount, description, created_by)
-            )
+    def get_active_events(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM events WHERE is_active=1").fetchall()]
+
+    def get_event(self, eid: int) -> Optional[Dict]:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+            return dict(row) if row else None
+
+    def get_my_event_team(self, event_id: int, user_id: int) -> Optional[List[Dict]]:
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return None
+            reg = conn.execute("SELECT team_members FROM event_registrations WHERE event_id=? AND participant_id=?", (event_id, p['id'])).fetchone()
+            if not reg:
+                return None
+            members = [m.strip() for m in (reg['team_members'] or '').split(',')]
+            return [dict(r) for r in conn.execute("SELECT first_name, last_name FROM participants WHERE CONCAT(last_name, ' ', first_name) IN ({})".format(','.join(['?']*len(members))), members).fetchall()]
+
+    def leave_event_team(self, event_id: int, user_id: int) -> bool:
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return False
+            conn.execute("DELETE FROM event_registrations WHERE event_id=? AND participant_id=?", (event_id, p['id']))
             return True
 
-    def create_event(self, name: str, description: str, team_size: int) -> int:
+    def leave_mini_course_team(self, mc_id: int, ts_id: int, user_id: int) -> bool:
         with self._get_conn() as conn:
-            cur = conn.execute(
-                "INSERT INTO events (name, description, team_size, is_active) VALUES (?, ?, ?, 1)",
-                (name.strip(), description.strip(), team_size)
-            )
-            return cur.lastrowid
+            p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+            if not p:
+                return False
+            conn.execute("DELETE FROM mini_course_registrations WHERE mini_course_id=? AND participant_id=?", (mc_id, p['id']))
+            return True
 
-    def get_active_events(self) -> List[Dict[str, Any]]:
+    def register_team_for_event(self, event_id: int, captain_user_id: int, selected_user_ids: List[int]) -> Tuple[bool, str, List[str]]:
+        ev = self.get_event(event_id)
+        if not ev:
+            return False, "Мероприятие не найдено", []
+        if not (ev['min_team_size'] <= len(selected_user_ids) <= ev['max_team_size']):
+            return False, f"Нужно от {ev['min_team_size']} до {ev['max_team_size']} человек.", []
+
+        errors = []
         with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM events WHERE is_active=1 ORDER BY created_at DESC"
-                ).fetchall()
-            ]
-
-    def get_event(self, event_id: int) -> Optional[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            row = conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
-            return dict(row) if row else None
-
-    def register_team_for_event(self, event_id: int, participant_id: int, team_members: List[str]) -> Tuple[bool, str]:
-        """Register a team for an event"""
-        event = self.get_event(event_id)
-        if not event:
-            return False, "Мероприятие не найдено"
-
-        participant = self.get_participant_by_user_id(participant_id)
-        if not participant:
-            return False, "Участник не найден"
-
-        # Validate team members format and existence
-        parsed_members = []
-        for member in team_members:
-            parts = member.strip().split()
-            if len(parts) < 2:
-                return False, f"Некорректный формат участника: {member}. Используйте 'Фамилия Имя'"
-
-            first_name = ' '.join(parts[1:])  # Handle multiple first names
-            last_name = parts[0]
-
-            # Check if participant exists
-            existing_participant = self.get_participant_by_name(first_name, last_name)
-            if not existing_participant:
-                return False, f"Участник не найден: {last_name} {first_name}"
-
-            # Check if participant is already registered for this event
-            with self._get_conn() as conn:
-                existing_registration = conn.execute(
-                    """
-                    SELECT 1 FROM event_registrations er
-                    JOIN participants p ON p.id = er.participant_id
-                    WHERE er.event_id=? AND p.id=?
-                    """,
-                    (event_id, existing_participant['id'])
-                ).fetchone()
-
-                if existing_registration:
-                    return False, f"Участник уже зарегистрирован на это мероприятие: {last_name} {first_name}"
-
-                parsed_members.append(f"{last_name} {first_name}")
-
-        # Check team size
-        if len(parsed_members) != event['team_size']:
-            return False, f"Количество участников должно быть ровно {event['team_size']}"
-
-        with self._get_conn() as conn:
-            # Check if this participant already registered a team for this event
-            existing_registration = conn.execute(
-                "SELECT 1 FROM event_registrations WHERE event_id=? AND participant_id=?",
-                (event_id, participant_id)
-            ).fetchone()
-
-            if existing_registration:
-                return False, "Вы уже зарегистрировали команду на это мероприятие"
-
-            # Register the team
-            conn.execute(
-                """
-                INSERT INTO event_registrations (event_id, participant_id, team_members)
-                VALUES (?, ?, ?)
-                """,
-                (event_id, participant_id, ", ".join(parsed_members))
-            )
-            return True, "Команда успешно зарегистрирована на мероприятие!"
-
-    def get_event_registrations(self, event_id: int) -> List[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT er.*, p.first_name, p.last_name, p.personal_code
-                    FROM event_registrations er
-                    JOIN participants p ON p.id = er.participant_id
-                    WHERE er.event_id=?
-                    ORDER BY er.registration_time
-                    """,
-                    (event_id,)
-                ).fetchall()
-            ]
-
-    def get_event_registration_details(self, event_id: int) -> List[Dict[str, Any]]:
-        """Get detailed event registration information including team members"""
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT er.*, p.first_name, p.last_name, p.personal_code, er.team_members
-                    FROM event_registrations er
-                    JOIN participants p ON p.id = er.participant_id
-                    WHERE er.event_id=?
-                    ORDER BY er.registration_time
-                    """,
-                    (event_id,)
-                ).fetchall()
-            ]
-
-    def get_mini_course_registration_details(self, mini_course_id: int) -> List[Dict[str, Any]]:
-        """Get detailed mini-course registration information"""
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT mcr.*, p.first_name, p.last_name, p.personal_code, ts.time
-                    FROM mini_course_registrations mcr
-                    JOIN participants p ON p.id = mcr.participant_id
-                    JOIN time_slots ts ON ts.id = mcr.time_slot_id
-                    WHERE mcr.mini_course_id=?
-                    ORDER BY ts.time, p.last_name, p.first_name
-                    """,
-                    (mini_course_id,)
-                ).fetchall()
-            ]
-
-    def create_mini_course(self, name: str, description: str, max_participants: int) -> int:
-        with self._get_conn() as conn:
-            cur = conn.execute(
-                "INSERT INTO mini_courses (name, description, max_participants, is_published) VALUES (?, ?, ?, 0)",
-                (name.strip(), description.strip(), max_participants)
-            )
-            return cur.lastrowid
-
-    def add_time_slot(self, mini_course_id: int, time: str) -> bool:
-        with self._get_conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             try:
+                cap = conn.execute("SELECT id, first_name, last_name FROM participants WHERE user_id=?", (captain_user_id,)).fetchone()
+                if not cap:
+                    return False, "Вы не зарегистрированы", errors
+
+                # Проверяем каждого выбранного участника в одной транзакции
+                member_participant_ids = []
+                for vk_uid in selected_user_ids:
+                    p = conn.execute("SELECT id, first_name, last_name FROM participants WHERE user_id=?", (vk_uid,)).fetchone()
+                    if not p:
+                        errors.append(f"Участник с ID {vk_uid} не найден")
+                        continue
+                    existing = conn.execute(
+                        "SELECT 1 FROM event_registrations WHERE event_id=? AND participant_id=?",
+                        (event_id, p['id'])
+                    ).fetchone()
+                    if existing:
+                        errors.append(f"{p['last_name']} {p['first_name']} уже состоит в другой команде")
+                        continue
+                    member_participant_ids.append(p['id'])
+
+                if errors:
+                    conn.rollback()
+                    return False, "Некоторые участники не могут быть добавлены", errors
+
+                # Удаляем старую регистрацию капитана (если была)
+                conn.execute("DELETE FROM event_registrations WHERE event_id=? AND participant_id=?", (event_id, cap['id']))
+
+                # Создаём запись — капитан регистрирует команду
+                members_names = []
+                for pid in member_participant_ids:
+                    p = conn.execute("SELECT first_name, last_name FROM participants WHERE id=?", (pid,)).fetchone()
+                    if p:
+                        members_names.append(f"{p['last_name']} {p['first_name']}")
+                        conn.execute(
+                            "INSERT OR IGNORE INTO event_registrations (event_id, participant_id, team_members) VALUES (?, ?, ?)",
+                            (event_id, pid, "")
+                        )
+                # Обновляем team_members у капитана (храним список имён)
                 conn.execute(
-                    "INSERT INTO time_slots (mini_course_id, time) VALUES (?, ?)",
-                    (mini_course_id, time.strip())
+                    "UPDATE event_registrations SET team_members=? WHERE event_id=? AND participant_id=?",
+                    (", ".join(members_names), event_id, cap['id'])
                 )
-                return True
-            except sqlite3.IntegrityError:
-                return False  # Time slot already exists
 
-    def get_mini_course(self, mini_course_id: int) -> Optional[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            row = conn.execute("SELECT * FROM mini_courses WHERE id=?", (mini_course_id,)).fetchone()
-            return dict(row) if row else None
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                raise e
 
-    def get_time_slots(self, mini_course_id: int) -> List[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM time_slots WHERE mini_course_id=? ORDER BY time",
-                    (mini_course_id,)
-                ).fetchall()
-            ]
+        # Автораспределение (уже вне критической секции)
+        self.auto_distribute_participants(event_id)
+        return True, "Команда зарегистрирована!", []
 
-    def get_unpublished_mini_courses(self) -> List[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM mini_courses WHERE is_published=0 ORDER BY created_at DESC"
-                ).fetchall()
-            ]
-
-    def get_published_mini_courses(self) -> List[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM mini_courses WHERE is_published=1 ORDER BY created_at DESC"
-                ).fetchall()
-            ]
-
-    def publish_mini_courses(self) -> int:
-        with self._get_conn() as conn:
-            cur = conn.execute(
-                "UPDATE mini_courses SET is_published=1 WHERE is_published=0"
-            )
-            return cur.rowcount
-
-    def register_for_mini_course(self, mini_course_id: int, participant_id: int, time_slot_id: int) -> Tuple[bool, str]:
-        """Register a participant for a mini course"""
-        mini_course = self.get_mini_course(mini_course_id)
-        if not mini_course:
-            return False, "Мини-курс не найден"
-
-        if not mini_course['is_published']:
-            return False, "Этот мини-курс еще не опубликован"
-
-        participant = self.get_participant_by_user_id(participant_id)
-        if not participant:
-            return False, "Участник не найден"
-
-        time_slot = self.get_time_slot(time_slot_id)
-        if not time_slot or time_slot['mini_course_id'] != mini_course_id:
-            return False, "Слот времени не найден"
+    def register_mini_course_individual(self, mc_id: int, ts_id: int, user_id: int) -> Tuple[bool, str]:
+        """Индивидуальная запись участника на мини-курс"""
+        mc = self.get_mini_course(mc_id)
+        if not mc:
+            return False, "Курс не найден"
 
         with self._get_conn() as conn:
-            # Check if participant already registered for this mini course
-            existing = conn.execute(
-                "SELECT 1 FROM mini_course_registrations WHERE mini_course_id=? AND participant_id=?",
-                (mini_course_id, participant_id)
-            ).fetchone()
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                p = conn.execute("SELECT id FROM participants WHERE user_id=?", (user_id,)).fetchone()
+                if not p:
+                    return False, "Вы не зарегистрированы"
 
-            if existing:
-                return False, "Вы уже зарегистрированы на этот мини-курс"
+                # Проверяем, не записан ли уже на этот курс+слот
+                already = conn.execute(
+                    "SELECT 1 FROM mini_course_registrations WHERE mini_course_id=? AND time_slot_id=? AND participant_id=?",
+                    (mc_id, ts_id, p['id'])
+                ).fetchone()
+                if already:
+                    return False, "Вы уже записаны на этот курс в данное время"
 
-            # Check if mini course is full
-            current_count = conn.execute(
-                "SELECT COUNT(*) FROM mini_course_registrations WHERE mini_course_id=? AND time_slot_id=?",
-                (mini_course_id, time_slot_id)
-            ).fetchone()[0]
+                # Проверяем количество мест
+                current = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM mini_course_registrations WHERE mini_course_id=? AND time_slot_id=?",
+                    (mc_id, ts_id)
+                ).fetchone()['cnt']
+                if current >= mc['max_participants']:
+                    return False, "Нет свободных мест на этот временной слот"
 
-            if current_count >= mini_course['max_participants']:
-                return False, "На этот мини-курс в выбранное время нет свободных мест"
+                conn.execute(
+                    "INSERT INTO mini_course_registrations (mini_course_id, participant_id, time_slot_id) VALUES (?, ?, ?)",
+                    (mc_id, p['id'], ts_id)
+                )
+                conn.commit()
+                return True, f"Вы записаны на курс '{mc['name']}'!"
+            except Exception as e:
+                conn.rollback()
+                raise e
 
-            # Register participant
-            conn.execute(
-                """
-                INSERT INTO mini_course_registrations (mini_course_id, participant_id, time_slot_id)
-                VALUES (?, ?, ?)
-                """,
-                (mini_course_id, participant_id, time_slot_id)
-            )
-            return True, "Вы успешно зарегистрированы на мини-курс!"
-
-    def get_time_slot(self, time_slot_id: int) -> Optional[Dict[str, Any]]:
+    def get_published_mini_courses_with_stats(self) -> List[Dict]:
+        """Возвращает опубликованные мини-курсы с количеством свободных мест по каждому слоту"""
         with self._get_conn() as conn:
-            row = conn.execute("SELECT * FROM time_slots WHERE id=?", (time_slot_id,)).fetchone()
-            return dict(row) if row else None
+            courses = [dict(r) for r in conn.execute("SELECT * FROM mini_courses WHERE is_published=1").fetchall()]
+            for mc in courses:
+                slots = conn.execute("""
+                    SELECT ts.*,
+                           (SELECT COUNT(*) FROM mini_course_registrations mcr WHERE mcr.time_slot_id=ts.id) as registered
+                    FROM time_slots ts
+                    WHERE ts.mini_course_id=?
+                """, (mc['id'],)).fetchall()
+                mc['slots'] = [dict(s) for s in slots]
+                mc['total_registered'] = conn.execute(
+                    "SELECT COUNT(*) FROM mini_course_registrations WHERE mini_course_id=?", (mc['id'],)
+                ).fetchone()[0]
+            return courses
 
-    def get_mini_course_registrations(self, mini_course_id: int, time_slot_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_event_teams_list(self, event_id: int) -> List[Dict]:
+        """Список команд мероприятия для админа"""
         with self._get_conn() as conn:
-            query = """
-                SELECT mcr.*, p.first_name, p.last_name, ts.time
+            return [dict(r) for r in conn.execute("""
+                SELECT er.*, p.first_name, p.last_name
+                FROM event_registrations er
+                JOIN participants p ON p.id = er.participant_id
+                WHERE er.event_id = ?
+                ORDER BY p.last_name
+            """, (event_id,)).fetchall()]
+
+    def get_mini_course_full_registrations(self, mc_id: int) -> List[Dict]:
+        """Все регистрации на мини-курс со слотами для админа"""
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("""
+                SELECT mcr.*, p.first_name, p.last_name, ts.time as slot_time
                 FROM mini_course_registrations mcr
                 JOIN participants p ON p.id = mcr.participant_id
                 JOIN time_slots ts ON ts.id = mcr.time_slot_id
-                WHERE mcr.mini_course_id=?
-            """
-            params = [mini_course_id]
+                WHERE mcr.mini_course_id = ?
+                ORDER BY ts.time, p.last_name
+            """, (mc_id,)).fetchall()]
 
-            if time_slot_id:
-                query += " AND mcr.time_slot_id=?"
-                params.append(time_slot_id)
-
-            query += " ORDER BY mcr.registration_time"
-
-            return [
-                dict(row)
-                for row in conn.execute(query, params).fetchall()
-            ]
-
-    def freeze_registrations(self, event_id: Optional[int] = None, mini_course_id: Optional[int] = None) -> int:
-        """Freeze registrations for events or mini courses"""
+    def submit_complaint(self, pid: int, msg: str):
         with self._get_conn() as conn:
-            if event_id:
-                cur = conn.execute(
-                    "UPDATE event_registrations SET is_frozen=1 WHERE event_id=? AND is_frozen=0",
-                    (event_id,)
-                )
-                return cur.rowcount
-            elif mini_course_id:
-                cur = conn.execute(
-                    "UPDATE mini_course_registrations SET is_frozen=1 WHERE mini_course_id=? AND is_frozen=0",
-                    (mini_course_id,)
-                )
-                return cur.rowcount
-            return 0
+            conn.execute("INSERT INTO complaints (participant_id, message) VALUES (?, ?)", (pid, msg))
 
-    def submit_complaint(self, participant_id: int, message: str) -> bool:
+    def get_recent_complaints(self) -> List[Dict]:
         with self._get_conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO complaints (participant_id, message)
-                VALUES (?, ?)
-                """,
-                (participant_id, message.strip())
-            )
-            return True
+            return [dict(r) for r in conn.execute("SELECT c.*, p.first_name, p.last_name, p.personal_code FROM complaints c JOIN participants p ON p.id=c.participant_id WHERE c.is_resolved=0 ORDER BY c.created_at DESC LIMIT 10").fetchall()]
 
-    def get_recent_complaints(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def resolve_complaint(self, cid: int):
         with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT c.*, p.first_name, p.last_name, p.personal_code
-                    FROM complaints c
-                    JOIN participants p ON p.id = c.participant_id
-                    WHERE c.is_resolved=0
-                    ORDER BY c.created_at DESC
-                    LIMIT ?
-                    """,
-                    (limit,)
-                ).fetchall()
-            ]
+            conn.execute("UPDATE complaints SET is_resolved=1 WHERE id=?", (cid,))
 
-    def resolve_complaint(self, complaint_id: int) -> bool:
+    def pre_register_participants(self, names: List[str]) -> List[Dict]:
+        res = []
         with self._get_conn() as conn:
-            cur = conn.execute(
-                "UPDATE complaints SET is_resolved=1 WHERE id=?",
-                (complaint_id,)
-            )
-            return cur.rowcount > 0
-
-    def get_participant_events(self, participant_id: int) -> List[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT e.id, e.name, e.description, er.team_members, er.registration_time
-                    FROM event_registrations er
-                    JOIN events e ON e.id = er.event_id
-                    WHERE er.participant_id=?
-                    ORDER BY er.registration_time DESC
-                    """,
-                    (participant_id,)
-                ).fetchall()
-            ]
-
-    def get_participant_mini_courses(self, participant_id: int) -> List[Dict[str, Any]]:
-        with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT mc.id, mc.name, mc.description, ts.time, mcr.registration_time
-                    FROM mini_course_registrations mcr
-                    JOIN mini_courses mc ON mc.id = mcr.mini_course_id
-                    JOIN time_slots ts ON ts.id = mcr.time_slot_id
-                    WHERE mcr.participant_id=?
-                    ORDER BY mcr.registration_time DESC
-                    """,
-                    (participant_id,)
-                ).fetchall()
-            ]
-
-    def get_setting(self, key: str, default: str = "") -> str:
-        with self._get_conn() as conn:
-            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-            return row["value"] if row else default
-
-    def set_setting(self, key: str, value: str):
-        with self._get_conn() as conn:
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
-
-    def get_admins(self) -> List[int]:
-        with self._get_conn() as conn:
-            return [
-                row["user_id"]
-                for row in conn.execute("SELECT user_id FROM participants WHERE role IN ('admin', 'super_admin') AND user_id IS NOT NULL ORDER BY user_id").fetchall()
-            ]
-
-    def set_admin_role(self, user_id: int, role: str) -> bool:
-        with self._get_conn() as conn:
-            cur = conn.execute(
-                "UPDATE participants SET role=? WHERE user_id=?",
-                (role, user_id)
-            )
-            return cur.rowcount > 0
-
-    def get_participant_info(self, participant_id: int) -> Optional[Dict[str, Any]]:
-        participant = self.get_participant_by_user_id(participant_id)
-        if not participant:
-            return None
-
-        info = dict(participant)
-        info['balance_history'] = self.get_balance_history(participant_id)
-        info['events'] = self.get_participant_events(participant_id)
-        info['mini_courses'] = self.get_participant_mini_courses(participant_id)
-        return info
-
-    def pre_register_participants(self, names_list: List[str]) -> List[Dict[str, Any]]:
-        """Pre-register participants from a list of names (format: LastName FirstName)"""
-        results = []
-        with self._get_conn() as conn:
-            for name_item in names_list:
-                parts = name_item.strip().split()
+            for n in names:
+                parts = n.strip().split()
                 if len(parts) < 2:
-                    results.append({
-                        'success': False,
-                        'name': name_item,
-                        'error': 'Некорректный формат. Используйте "Фамилия Имя"'
-                    })
+                    res.append({'success': False, 'name': n, 'error': 'Формат'})
                     continue
-
-                last_name = parts[0]
-                first_name = ' '.join(parts[1:])
-
-                # Generate unique personal code
-                while True:
-                    personal_code = self.generate_personal_code()
-                    existing = conn.execute("SELECT 1 FROM pre_registered_participants WHERE personal_code=?", (personal_code,)).fetchone()
-                    if not existing:
-                        break
-
+                ln, fn = parts[0], ' '.join(parts[1:])
+                pc = self.generate_personal_code()
                 try:
-                    conn.execute(
-                        """
-                        INSERT INTO pre_registered_participants (first_name, last_name, personal_code)
-                        VALUES (?, ?, ?)
-                        """,
-                        (first_name.strip(), last_name.strip(), personal_code)
-                    )
-                    results.append({
-                        'success': True,
-                        'name': f"{last_name} {first_name}",
-                        'personal_code': personal_code
-                    })
-                except sqlite3.IntegrityError:
-                    results.append({
-                        'success': False,
-                        'name': f"{last_name} {first_name}",
-                        'error': 'Участник с такими данными уже существует'
-                    })
+                    conn.execute("INSERT INTO pre_registered_participants (first_name, last_name, personal_code) VALUES (?, ?, ?)", (fn, ln, pc))
+                    res.append({'success': True, 'name': f"{ln} {fn}", 'personal_code': pc})
+                except:
+                    res.append({'success': False, 'name': f"{ln} {fn}", 'error': 'Уже есть'})
+        return res
 
-        return results
+    def login_with_personal_code(self, uid: int, pc: str) -> Tuple[bool, str, Optional[Dict]]:
+        with self._get_conn() as conn:
+            pr = conn.execute("SELECT * FROM pre_registered_participants WHERE personal_code=? AND is_used=0", (pc,)).fetchone()
+            if not pr:
+                return False, "Код не найден", None
+            ex = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
+            if ex:
+                return False, f"Вы уже {ex['first_name']}", ex
+            conn.execute("INSERT INTO participants (user_id, first_name, last_name, personal_code) VALUES (?, ?, ?, ?)",
+                        (uid, pr['first_name'], pr['last_name'], pc))
+            conn.execute("UPDATE pre_registered_participants SET is_used=1 WHERE id=?", (pr['id'],))
+            p = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
+            return True, f"Привет, {p['first_name']}!", dict(p)
 
-    def add_single_participant(self, first_name: str, last_name: str) -> Tuple[bool, str, Optional[str]]:
-        """Add a single participant to pre-registered list"""
-        if not first_name or not last_name:
-            return False, "Имя и фамилия обязательны", None
+    def login_with_admin_invite(self, uid: int, invite_code: str) -> Tuple[bool, str, Optional[Dict]]:
+        with self._get_conn() as conn:
+            invite = conn.execute("SELECT * FROM admin_invites WHERE invite_code=? AND is_used=0", (invite_code,)).fetchone()
+            if not invite:
+                return False, "Пригласительный код не найден или уже использован", None
+            ex = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
+            if ex:
+                return False, f"Вы уже {ex['first_name']}", ex
+            conn.execute("INSERT INTO participants (user_id, first_name, last_name, personal_code, role) VALUES (?, 'Admin', 'User', ?, ?)",
+                        (uid, self.generate_personal_code(), invite['role']))
+            conn.execute("UPDATE admin_invites SET is_used=1 WHERE id=?", (invite['id'],))
+            p = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
+            return True, f"Привет, Админ! Ваша роль: {p['role']}", dict(p)
 
-        # Generate unique personal code
-        personal_code = self.generate_personal_code()
+    def is_fair_active(self) -> bool:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT value FROM fair_settings WHERE key='is_active'").fetchone()
+            return row and row['value'] == '1'
+
+    def get_active_fair_event_id(self) -> Optional[int]:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT value FROM fair_settings WHERE key='active_event_id'").fetchone()
+            return int(row['value']) if row else None
+
+    def start_fair(self, event_id: int, budget: int):
+        with self._get_conn() as conn:
+            conn.execute("INSERT OR REPLACE INTO fair_settings (key, value) VALUES ('is_active', '1')")
+            conn.execute("INSERT OR REPLACE INTO fair_settings (key, value) VALUES ('active_event_id', ?)", (str(event_id),))
+            conn.execute("INSERT OR REPLACE INTO fair_settings (key, value) VALUES ('team_budget', ?)", (str(budget),))
+
+    def stop_fair(self):
+        with self._get_conn() as conn:
+            conn.execute("INSERT OR REPLACE INTO fair_settings (key, value) VALUES ('is_active', '0')")
+
+    def get_fair_teams(self, event_id: int) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("""
+                SELECT er.id, er.team_members, p.user_id as captain_uid, p.first_name, p.last_name
+                FROM event_registrations er
+                JOIN participants p ON p.id = er.participant_id
+                WHERE er.event_id = ?
+            """, (event_id,)).fetchall()]
+
+    def find_fair_participant(self, user_id: int, event_id: int) -> Optional[Dict]:
+        p = self.get_participant_by_user_id(user_id)
+        if not p:
+            return None
+        user_full_name = f"{p['last_name']} {p['first_name']}"
 
         with self._get_conn() as conn:
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO pre_registered_participants (first_name, last_name, personal_code)
-                    VALUES (?, ?, ?)
-                    """,
-                    (first_name.strip(), last_name.strip(), personal_code)
-                )
-                return True, f"Участник {last_name} {first_name} добавлен с кодом: {personal_code}", personal_code
-            except sqlite3.IntegrityError:
-                return False, f"Участник {last_name} {first_name} уже существует", None
+            rows = conn.execute("""
+                SELECT er.id, er.team_members, t.name as team_name
+                FROM event_registrations er
+                JOIN events t ON t.id = er.event_id
+                WHERE er.event_id = ?
+            """, (event_id,)).fetchall()
 
-    def remove_pre_registered_participant(self, personal_code: str) -> Tuple[bool, str]:
-        """Remove a participant from pre-registered list by personal code"""
+            for row in rows:
+                members = [m.strip() for m in (row['team_members'] or '').split(',')]
+                if user_full_name in members:
+                    return {
+                        'reg_id': row['id'],
+                        'team_name': row['team_name'],
+                        'members': members
+                    }
+        return None
+
+    def add_fair_item(self, user_id: int, team_name: str, name: str, price: int) -> int:
         with self._get_conn() as conn:
-            # Check if participant exists and is not used
-            participant = conn.execute(
-                "SELECT * FROM pre_registered_participants WHERE personal_code=?",
-                (personal_code,)
-            ).fetchone()
+            return conn.execute("INSERT INTO fair_items (user_id, team_name, name, price) VALUES (?, ?, ?, ?)",
+                               (user_id, team_name, name, price)).lastrowid
 
-            if not participant:
-                return False, "Участник с таким персональным кодом не найден"
-
-            if participant['is_used']:
-                return False, "Нельзя удалить участника, который уже использовал свой код для регистрации"
-
-            conn.execute(
-                "DELETE FROM pre_registered_participants WHERE personal_code=?",
-                (personal_code,)
-            )
-            return True, f"Участник {participant['last_name']} {participant['first_name']} удален"
-
-    def get_pre_registered_participants(self) -> List[Dict[str, Any]]:
+    def get_fair_items(self, user_id: int) -> List[Dict]:
         with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM pre_registered_participants ORDER BY last_name, first_name"
-                ).fetchall()
-            ]
+            return [dict(r) for r in conn.execute("SELECT * FROM fair_items WHERE user_id=? AND is_active=1", (user_id,)).fetchall()]
 
-    def get_unused_pre_registered_participants(self) -> List[Dict[str, Any]]:
+    def get_team_budget(self) -> int:
         with self._get_conn() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM pre_registered_participants WHERE is_used=0 ORDER BY last_name, first_name"
-                ).fetchall()
-            ]
+            row = conn.execute("SELECT value FROM fair_settings WHERE key='team_budget'").fetchone()
+            return int(row['value']) if row else 0
 
-    def login_with_personal_code(self, user_id: int, personal_code: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        """Login participant using their personal code"""
+    def get_event_registration_details(self, event_id: int) -> List[Dict]:
         with self._get_conn() as conn:
-            # Check if this personal code exists in pre-registered participants
-            pre_reg = conn.execute(
-                "SELECT * FROM pre_registered_participants WHERE personal_code=? AND is_used=0",
-                (personal_code,)
-            ).fetchone()
+            return [dict(r) for r in conn.execute("""
+                SELECT er.*, p.first_name, p.last_name
+                FROM event_registrations er
+                JOIN participants p ON p.id = er.participant_id
+                WHERE er.event_id = ?
+            """, (event_id,)).fetchall()]
 
-            if not pre_reg:
-                return False, "Персональный код не найден или уже использован", None
-
-            # Check if this user is already registered
-            existing_participant = conn.execute(
-                "SELECT * FROM participants WHERE user_id=?",
-                (user_id,)
-            ).fetchone()
-
-            if existing_participant:
-                return False, f"Вы уже зарегистрированы как {existing_participant['first_name']} {existing_participant['last_name']}", existing_participant
-
-            # Register the participant
-            conn.execute(
-                """
-                INSERT INTO participants (user_id, first_name, last_name, personal_code, role)
-                VALUES (?, ?, ?, ?, 'participant')
-                """,
-                (user_id, pre_reg['first_name'], pre_reg['last_name'], personal_code)
-            )
-
-            # Mark the pre-registered code as used
-            conn.execute(
-                "UPDATE pre_registered_participants SET is_used=1 WHERE id=?",
-                (pre_reg['id'],)
-            )
-
-            # Get the newly registered participant
-            participant = conn.execute(
-                "SELECT * FROM participants WHERE user_id=?",
-                (user_id,)
-            ).fetchone()
-
-            return True, f"Добро пожаловать, {participant['first_name']} {participant['last_name']}!", dict(participant)
-
-    def add_admin_by_vk_tag(self, super_admin_id: int, vk_tag: str, role: str = 'admin') -> Tuple[bool, str]:
-        """Add admin by VK tag (e.g., @username or user ID)"""
-        if role not in ('admin', 'super_admin'):
-            return False, "Некорректная роль"
-
-        # Check if super admin exists
-        super_admin = self.get_participant_by_user_id(super_admin_id)
-        if not super_admin or super_admin.get('role') != 'super_admin':
-            return False, "Только суперадмин может добавлять админов"
-
-        # Clean the vk_tag - remove @ symbol if present
-        vk_tag = vk_tag.strip()
-        if vk_tag.startswith('@'):
-            vk_tag = vk_tag[1:]
-
-        # Check if it's a numeric user ID
-        if vk_tag.isdigit():
-            admin_user_id = int(vk_tag)
-        else:
-            # For non-numeric tags (usernames), we'll use a placeholder ID
-            # In a real implementation, we would resolve the username to user ID via VK API
-            admin_user_id = -1  # Placeholder for username-based admins
-
-        # Check if this user is already registered
-        existing_participant = self.get_participant_by_user_id(admin_user_id) if admin_user_id > 0 else None
-        if existing_participant:
-            # Update role if needed
-            if existing_participant.get('role') != role:
-                self.set_admin_role(admin_user_id, role)
-            return True, f"Пользователь {vk_tag} уже зарегистрирован и назначен {role}"
-
-        # For new admins, we need their name. In a real implementation, we would get this from VK API
-        # For now, we'll use a placeholder
+    def get_mini_course_registrations(self, mc_id: int) -> List[Dict]:
         with self._get_conn() as conn:
-            # Generate a personal code for the admin
-            personal_code = self.generate_personal_code()
+            return [dict(r) for r in conn.execute("""
+                SELECT mcr.*, p.first_name, p.last_name
+                FROM mini_course_registrations mcr
+                JOIN participants p ON p.id = mcr.participant_id
+                WHERE mcr.mini_course_id = ?
+            """, (mc_id,)).fetchall()]
 
-            conn.execute(
-                """
-                INSERT INTO participants (user_id, first_name, last_name, personal_code, role)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (admin_user_id, "Admin", "User", personal_code, role)
-            )
-
-        return True, f"Пользователь {vk_tag} назначен {role}"
-
-    def get_pre_registered_by_code(self, personal_code: str) -> Optional[Dict[str, Any]]:
+    def get_unpublished_mini_courses(self) -> List[Dict]:
         with self._get_conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM pre_registered_participants WHERE personal_code=?",
-                (personal_code,)
-            ).fetchone()
+            return [dict(r) for r in conn.execute("SELECT * FROM mini_courses WHERE is_published=0").fetchall()]
+
+    def publish_mini_courses(self) -> int:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE mini_courses SET is_published=1 WHERE is_published=0")
+            return conn.execute("SELECT COUNT(*) FROM mini_courses WHERE is_published=1").fetchone()[0]
+
+    def get_balance_history(self, pid: int) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM balance_history WHERE participant_id=? ORDER BY created_at DESC", (pid,)).fetchall()]
+
+    def get_pre_registered_participants(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM pre_registered_participants ORDER BY last_name").fetchall()]
+
+    def get_mini_course(self, mc_id: int) -> Optional[Dict]:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM mini_courses WHERE id=?", (mc_id,)).fetchone()
             return dict(row) if row else None
+
+    def get_time_slot(self, ts_id: int) -> Optional[Dict]:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM time_slots WHERE id=?", (ts_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_time_slots(self, mc_id: int) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM time_slots WHERE mini_course_id=?", (mc_id,)).fetchall()]
+
+    def get_published_mini_courses(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM mini_courses WHERE is_published=1").fetchall()]
+
+    def create_mini_course(self, name: str, desc: str, max_p: int) -> int:
+        with self._get_conn() as conn:
+            return conn.execute("INSERT INTO mini_courses (name, description, max_participants) VALUES (?, ?, ?)", (name, desc, max_p)).lastrowid
+
+    def add_time_slot(self, mc_id: int, time: str):
+        with self._get_conn() as conn:
+            conn.execute("INSERT OR IGNORE INTO time_slots (mini_course_id, time) VALUES (?, ?)", (mc_id, time))

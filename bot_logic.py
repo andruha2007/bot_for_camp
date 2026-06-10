@@ -1,787 +1,873 @@
 import json
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Dict, Any, Optional
+from pyvkbot import Bot, Keyboard
 from database import DatabaseManager
 from config import config
 
 logger = logging.getLogger(__name__)
 
-CURRENCY = "баллов"
-
-S = {
-    "MAIN": "MAIN",
-    "WAIT_PERSONAL_CODE": "WAIT_PERSONAL_CODE",
-    "WAIT_ADMIN_VK_TAG": "WAIT_ADMIN_VK_TAG",
-    "WAIT_PARTICIPANT_NAMES": "WAIT_PARTICIPANT_NAMES",
-    "WAIT_EVENT_NAME": "WAIT_EVENT_NAME",
-    "WAIT_EVENT_DESCRIPTION": "WAIT_EVENT_DESCRIPTION",
-    "WAIT_EVENT_TEAM_SIZE": "WAIT_EVENT_TEAM_SIZE",
-    "WAIT_EVENT_TEAM_MEMBERS": "WAIT_EVENT_TEAM_MEMBERS",
-    "WAIT_MINI_COURSE_NAME": "WAIT_MINI_COURSE_NAME",
-    "WAIT_MINI_COURSE_DESCRIPTION": "WAIT_MINI_COURSE_DESCRIPTION",
-    "WAIT_MINI_COURSE_MAX_PARTICIPANTS": "WAIT_MINI_COURSE_MAX_PARTICIPANTS",
-    "WAIT_MINI_COURSE_TIME_SLOTS": "WAIT_MINI_COURSE_TIME_SLOTS",
-    "WAIT_BALANCE_AMOUNT": "WAIT_BALANCE_AMOUNT",
-    "WAIT_BALANCE_DESCRIPTION": "WAIT_BALANCE_DESCRIPTION",
-    "WAIT_COMPLAINT_MESSAGE": "WAIT_COMPLAINT_MESSAGE",
-    "WAIT_SINGLE_PARTICIPANT_NAME": "WAIT_SINGLE_PARTICIPANT_NAME",
-    "WAIT_REMOVE_PARTICIPANT_CODE": "WAIT_REMOVE_PARTICIPANT_CODE",
-}
-
-class CampBotLogic:
-    def __init__(self, db: DatabaseManager, send_callback: Callable[[int, str, Optional[Dict]], None]):
+class CampBot:
+    def __init__(self, bot: Bot, db: DatabaseManager):
+        self.bot = bot
         self.db = db
-        self.send = send_callback
-        self.user_states: Dict[int, Dict[str, Any]] = {}
-        self._ensure_initial_admin()
+        self.states: Dict[int, Dict[str, Any]] = {}
+        self._sync_admins()
+        self._register_handlers()
 
-    def _ensure_initial_admin(self):
-        allowed_ids = list(config.ADMIN_IDS or [])
+    def _sync_admins(self):
+        """Синхронизация админов из конфига при старте"""
         if config.INITIAL_SUPER_ADMIN:
-            allowed_ids.append(config.INITIAL_SUPER_ADMIN)
-
-        # Sync admins from config
-        for admin_id in allowed_ids:
-            self.db.set_admin_role(admin_id, 'admin')
-
-        # Set super admin if configured
-        if config.INITIAL_SUPER_ADMIN:
-            self.db.set_admin_role(config.INITIAL_SUPER_ADMIN, 'super_admin')
-
+            self.db.sync_admin_from_config(config.INITIAL_SUPER_ADMIN, 'super_admin')
+        for aid in (config.ADMIN_IDS or []):
+            self.db.sync_admin_from_config(aid, 'admin')
         logger.info("Admin sync complete")
 
-    def _set_state(self, user_id: int, state: str, ctx: Optional[Dict[str, Any]] = None):
-        self.user_states[user_id] = {"state": state, "ctx": ctx or {}}
+    def _register_handlers(self):
+        # 1. Обработка обычных текстовых сообщений и reply-кнопок
+        @self.bot.message()
+        def on_message(bot: Bot, message):
+            self.handle_message(message)
 
-    def _get_state(self, user_id: int) -> Dict[str, Any]:
-        return self.user_states.get(user_id, {"state": S["MAIN"], "ctx": {}})
+        # 2. Обработка нажатий на inline-кнопки (галочки, листалки)
+        try:
+            self.bot.on("message_callback", self.handle_callback)
+        except Exception as e:
+            logger.error(f"Не удалось зарегистрировать обработчик callback-кнопок: {e}")
 
-    def _clear_state(self, user_id: int):
-        self.user_states.pop(user_id, None)
+    # === Управление состояниями FSM ===
+    def _set_state(self, uid: int, state: str, ctx: Optional[Dict] = None):
+        self.states[uid] = {"state": state, "ctx": ctx or {}}
 
-    @staticmethod
-    def _payload(cmd: str) -> str:
-        return json.dumps({"cmd": cmd}, ensure_ascii=False)
+    def _clear_state(self, uid: int):
+        self.states.pop(uid, None)
 
-    @staticmethod
-    def _action_payload(payload: Dict[str, Any]) -> str:
-        return json.dumps(payload, ensure_ascii=False)
+    # === Генерация клавиатуры ===
+    def main_kb(self, role: str) -> Keyboard:
+        kb = Keyboard(one_time=False, inline=False)
+        if role in ("admin", "super_admin"):
+            kb.add_button("Мероприятие", color="primary", payload=json.dumps({"cmd": "events"}))
+            #kb.add_line()
+            kb.add_button("Мини-курсы", color="primary", payload=json.dumps({"cmd": "mini_courses"}))
+            kb.add_line()
+            kb.add_button("Жалобы", color="primary", payload=json.dumps({"cmd": "complaints"}))
+            kb.add_line()
+            kb.add_button("Настройки", color="secondary", payload=json.dumps({"cmd": "settings"}))
+        elif role == "participant":
+            kb.add_button("Баланс", color="primary", payload=json.dumps({"cmd": "balance"}))
+            kb.add_line()
+            kb.add_button("Жалоба", color="negative", payload=json.dumps({"cmd": "complaint"}))
+            kb.add_line()
+            kb.add_button("Мероприятия", color="primary", payload=json.dumps({"cmd": "register_event"}))
+            kb.add_line()
+            kb.add_button("Мини-курсы", color="primary", payload=json.dumps({"cmd": "register_mini_course"}))
+        else:
+            kb.add_button("Войти", color="positive", payload=json.dumps({"cmd": "login"}))
+        return kb
 
-    @staticmethod
-    def _money(value: float) -> str:
-        return f"{int(value)} {CURRENCY}" if float(value).is_integer() else f"{value:.1f} {CURRENCY}"
+    def wait_kb(self) -> Keyboard:
+        kb = Keyboard(one_time=True, inline=False)
+        kb.add_button("Отмена", color="negative", payload=json.dumps({"cmd": "cancel"}))
+        return kb
 
-    def _reply_kb(self, rows: List[List[Dict[str, str]]], one_time: bool = False) -> Dict[str, Any]:
-        return {
-            "one_time": one_time,
-            "buttons": [
-                [
-                    {
-                        "action": {"type": "text", "label": btn["label"], "payload": self._payload(btn["cmd"])},
-                        "color": btn.get("color", "secondary"),
-                    }
-                    for btn in row
-                ]
-                for row in rows
-            ],
-        }
+    def team_selection_kb(self, ctx: Dict) -> Keyboard:
+        kb = Keyboard(inline=True)
+        page = ctx.get("page", 0)
+        users = ctx["users"]
+        selected = ctx["selected"]
+        per_page = 4
+        start, end = page * per_page, (page + 1) * per_page
 
-    def _inline_kb(self, buttons: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return {
-            "inline": True,
-            "buttons": [
-                [
-                    {
-                        "action": {
-                            "type": "callback",
-                            "label": btn["label"][:40],
-                            "payload": self._action_payload(btn["payload"]),
-                        },
-                        "color": btn.get("color", "secondary"),
-                    }
-                ]
-                for btn in buttons
-            ],
-        }
-
-    def _wait_kb(self) -> Dict[str, Any]:
-        return self._reply_kb([[{"label": "Отмена", "cmd": "cancel", "color": "negative"}]], one_time=True)
-
-    def _main_kb(self, role: str, participant: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        if role == "admin" or role == "super_admin":
-            return self._reply_kb(
-                [
-                    [{"label": "Мероприятия", "cmd": "events", "color": "primary"}],
-                    [{"label": "Мини-курсы", "cmd": "mini_courses", "color": "primary"}],
-                    [{"label": "Жалобы", "cmd": "complaints", "color": "primary"}],
-                    [{"label": "Настройки", "cmd": "settings"}],
-                ]
+        # Каждый участник — отдельная строка
+        for i, u in enumerate(users[start:end]):
+            is_sel = u["user_id"] in selected
+            emoji = "✅" if is_sel else "⬜"
+            label = f"{emoji} {u['last_name']} {u['first_name']}"
+            color = "positive" if is_sel else "secondary"
+            kb.add_callback_button(
+                label[:40],
+                color=color,
+                payload=json.dumps({"action": "toggle_user", "target_uid": u["user_id"]})
             )
+            kb.add_line()
 
-        if role == "participant":
-            buttons = []
-            buttons.append([{"label": "Проверить баланс", "cmd": "balance", "color": "primary"}])
-            buttons.append([{"label": "Записаться на мероприятие", "cmd": "register_event", "color": "primary"}])
-            buttons.append([{"label": "Записаться на мини-курс", "cmd": "register_mini_course", "color": "primary"}])
-            buttons.append([{"label": "Информация о мини-курсах", "cmd": "mini_course_info", "color": "primary"}])
-            buttons.append([{"label": "Красная кнопка", "cmd": "complaint", "color": "negative"}])
-            return self._reply_kb(buttons)
+        # Кнопки навигации на одной строке
+        if page > 0:
+            kb.add_callback_button("⬅️", color="secondary", payload=json.dumps({"action": "team_page", "page": page - 1}))
+        if end < len(users):
+            kb.add_callback_button("➡️", color="secondary", payload=json.dumps({"action": "team_page", "page": page + 1}))
+        if page > 0 or end < len(users):
+            kb.add_line()
 
-        # Unregistered user - only show login option
-        return self._reply_kb(
-            [
-                [{"label": "Войти", "cmd": "login", "color": "positive"}],
-            ]
+        # Кнопка подтверждения на отдельной строке
+        kb.add_callback_button(
+            f"Завершить ({len(selected)})",
+            color="positive",
+            payload=json.dumps({"action": "submit_team"})
+        )
+        return kb
+
+    def team_selection_text(self, ctx: Dict) -> str:
+        ev = self.db.get_event(ctx.get("target_id"))
+        if not ev:
+            return "Выберите участников:"
+        selected_count = len(ctx.get("selected", []))
+        return f"📅 {ev['name']}\n👥 Команда: от {ev['min_team_size']} до {ev['max_team_size']}\n✅ Выбрано: {selected_count}\n\nНажимайте на участников, чтобы добавить/убрать:"
+
+    def participant_selection_kb(self, ctx: Dict) -> Keyboard:
+        kb = Keyboard(inline=True)
+        page = ctx.get("page", 0)
+        participants = ctx["participants"]
+        per_page = 4  # Уменьшено до 4
+        start, end = page * per_page, (page + 1) * per_page
+
+        # Добавляем кнопки участников
+        for p in participants[start:end]:
+            kb.add_callback_button(
+                f"{p['last_name']} {p['first_name']}",
+                color="primary",
+                payload=json.dumps({"action": "select_participant", "participant_id": p['id']})
+            )
+            kb.add_line()
+
+        # Кнопки навигации
+        nav_buttons_added = False
+        if page > 0:
+            kb.add_callback_button("⬅️", color="secondary", payload=json.dumps({"action": "participant_page", "page": page - 1}))
+            nav_buttons_added = True
+        if end < len(participants):
+            kb.add_callback_button("➡️", color="secondary", payload=json.dumps({"action": "participant_page", "page": page + 1}))
+            nav_buttons_added = True
+            
+        if nav_buttons_added:
+            kb.add_line()
+
+        return kb
+
+    # === Безопасное извлечение данных из объектов pyvkbot ===
+    @staticmethod
+    def _extract_message_data(message):
+        if isinstance(message, dict):
+            return (
+                message.get("from_id") or message.get("user_id"),
+                (message.get("text") or "").strip(),
+                message.get("payload")
+            )
+        return None, "", None
+
+    @staticmethod
+    def _extract_callback_data(event):
+        obj = getattr(event, 'object', event)
+        if isinstance(obj, dict):
+            return (
+                obj.get("user_id"),
+                obj.get("peer_id") or obj.get("user_id"),
+                obj.get("conversation_message_id"),
+                obj.get("payload", "{}")
+            )
+        return (
+            getattr(obj, 'user_id', None),
+            getattr(obj, 'peer_id', getattr(obj, 'user_id', None)),
+            getattr(obj, 'conversation_message_id', None),
+            getattr(obj, 'payload', "{}")
         )
 
-    def _is_super_admin_user(self, user_id: int) -> bool:
-        participant = self.db.get_participant_by_user_id(user_id)
-        return participant and participant.get("role") == "super_admin"
-
-    def handle_message(self, user_id: int, text: str, payload: Optional[Any] = None, user_info: Optional[Dict[str, str]] = None) -> None:
+    # === Главный обработчик сообщений ===
+    def handle_message(self, message):
         try:
-            text = (text or "").strip()
-            payload_dict = self._parse_payload(payload)
-            participant = self.db.get_participant_by_user_id(user_id)
+            uid, text, payload_str = self._extract_message_data(message)
+            if not uid or uid < 0:
+                return
 
-            role = participant.get("role") if participant else "unregistered"
-            state_data = self._get_state(user_id)
-            state = state_data["state"]
-            ctx = state_data["ctx"]
+            payload = json.loads(payload_str) if payload_str else {}
+            cmd = payload.get("cmd") or self._text_to_cmd(text)
 
-            cmd = payload_dict.get("cmd") if payload_dict else None
-            if not cmd:
-                cmd = self._command_from_text(text)
+            p = self.db.get_participant_by_user_id(uid)
+            role = p.get("role") if p else "unregistered"
+            state_data = self.states.get(uid, {"state": "MAIN", "ctx": {}})
+            state, ctx = state_data["state"], state_data["ctx"]
 
-            # Handle state input first (if user is in a multi-step process)
-            if state != S["MAIN"] and not cmd:
-                return self._handle_state_input(user_id, role, text, state, ctx)
+            # 1. Глобальные Назад/Отмена — перехватываем ДО всего
+            if cmd in ("cancel", "back") or text.lower() in ("отмена", "назад"):
+                self._clear_state(uid)
+                self.bot.send_message(uid, "Возврат в главное меню.", keyboard=self.main_kb(role))
+                return
 
-            # Handle commands second
+            # 2. FSM Ввод текста в активном состоянии
+            if state != "MAIN" and not cmd:
+                self.process_fsm(uid, role, text, state, ctx)
+                return
+
+            # 3. Команды из кнопок или текста
             if cmd:
-                return self._handle_command(user_id, role, cmd, participant)
+                self.route_command(uid, role, cmd, p)
+                return
 
-            # Handle special text commands (cancel, back)
-            if cmd in ("cancel", "back") or text.lower() in ("отмена", "назад", "/cancel", "/back"):
-                self._clear_state(user_id)
-                return self.send(user_id, "Действие отменено.", self._main_kb(role, participant))
+            self.bot.send_message(uid, "Используйте кнопки меню.", keyboard=self.main_kb(role))
 
-            return self.send(user_id, "Не понял команду. Используйте кнопки меню или напишите «Помощь».", self._main_kb(role, participant))
-        except Exception as exc:
-            logger.error("Message handler failed for %s: %s", user_id, exc, exc_info=True)
-            self.send(user_id, "Произошла ошибка. Я вернулся в главное меню.", self._main_kb("unregistered", None))
+        except Exception as e:
+            logger.error("Msg error: %s", e, exc_info=True)
 
-    @staticmethod
-    def _parse_payload(payload: Optional[Any]) -> Dict[str, Any]:
-        if not payload:
-            return {}
-        if isinstance(payload, dict):
-            return payload
+    # === Обработчик callback-кнопок (галочки, навигация) ===
+    def handle_callback(self, event):
         try:
-            return json.loads(payload)
-        except (TypeError, json.JSONDecodeError):
-            return {}
+            uid, peer_id, cmid, payload_str = self._extract_callback_data(event)
+            if not uid:
+                return
 
-    @staticmethod
-    def _command_from_text(text: str) -> Optional[str]:
-        aliases = {
-            "войти": "login",
-            "отмена": "cancel",
-            "назад": "back",
-            "баланс": "balance",
-            "мероприятия": "events",
-            "мини-курсы": "mini_courses",
-            "жалоба": "complaint",
-            "красная кнопка": "complaint",
-            "настройки": "settings",
-            "участники": "participants",
-            "предварительная регистрация": "pre_register",
-            "посмотреть зарегистрированных": "view_participants",
-            "добавить админа": "add_admin",
-            "создать мероприятие": "create_event",
-            "посмотреть активные мероприятия": "view_events",
-            "создать мини-курс": "create_mini_course",
-            "опубликовать мини-курсы": "publish_mini_courses",
-            "посмотреть неопубликованные": "view_unpublished",
-            "посмотреть опубликованные": "view_published",
-            "посмотреть команды на мероприятиях": "view_event_teams",
-            "посмотреть участников мини-курсов": "view_mini_course_participants",
-            "добавить участника": "add_single_participant",
-            "удалить участника": "remove_participant",
-        }
-        return aliases.get(text.lower())
+            if isinstance(payload_str, str):
+                payload = json.loads(payload_str)
+            else:
+                payload = payload_str or {}
 
-    def handle_callback(self, user_id: int, payload: Dict[str, Any]) -> None:
-        try:
-            payload = self._parse_payload(payload)
-            participant = self.db.get_participant_by_user_id(user_id)
-            role = participant.get("role") if participant else "unregistered"
             action = payload.get("action")
+            p = self.db.get_participant_by_user_id(uid)
+            role = p.get("role") if p else "unregistered"
 
-            if action == "select_event":
-                return self._select_event(user_id, role, int(payload["event_id"]))
-            if action == "select_mini_course":
-                return self._select_mini_course(user_id, role, int(payload["mini_course_id"]))
-            if action == "select_time_slot":
-                return self._select_time_slot(user_id, role, int(payload["mini_course_id"]), int(payload["time_slot_id"]))
-            if action == "view_participant":
-                return self._view_participant_info(user_id, role, int(payload["participant_id"]))
-            if action == "resolve_complaint":
-                return self._resolve_complaint(user_id, role, int(payload["complaint_id"]))
-            if action == "remove_admin":
-                return self._remove_admin(user_id, role, int(payload["admin_id"]))
+            if action == "toggle_user":
+                ctx = self.states.get(uid, {}).get("ctx", {})
+                target = payload["target_uid"]
+                if target in ctx.get("selected", []):
+                    ctx["selected"].remove(target)
+                else:
+                    ctx["selected"].append(target)
+                self.states[uid]["ctx"] = ctx
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": self.team_selection_text(ctx),
+                    "keyboard": self.team_selection_kb(ctx).get_keyboard()
+                })
 
-            self.send(user_id, "Действие больше не актуально. Откройте меню заново.", self._main_kb(role, participant))
-        except Exception as exc:
-            logger.error("Callback failed for %s: %s", user_id, exc, exc_info=True)
-            self.send(user_id, "Не удалось обработать кнопку. Попробуйте открыть меню заново.")
+            elif action == "team_page":
+                ctx = self.states.get(uid, {}).get("ctx", {})
+                ctx["page"] = payload["page"]
+                self.states[uid]["ctx"] = ctx
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": self.team_selection_text(ctx),
+                    "keyboard": self.team_selection_kb(ctx).get_keyboard()
+                })
 
-    def _handle_command(self, user_id: int, role: str, cmd: str, participant: Optional[Dict[str, Any]]):
+            elif action == "submit_team":
+                ctx = self.states.get(uid, {}).get("ctx", {})
+                ok, msg, errors = self.db.register_team_for_event(ctx.get("target_id"), uid, ctx.get("selected", []))
+                if ok:
+                    self._clear_state(uid)
+                    self.bot.send_message(uid, f"🎉 {msg}", keyboard=self.main_kb(role))
+                else:
+                    error_msg = "\n".join(errors) if errors else msg
+                    self.bot.send_message(uid, f"❌ {error_msg}", keyboard=self.team_selection_kb(ctx))
+
+            elif action == "leave_team":
+                if payload.get("target") == "event":
+                    self.db.leave_event_team(payload["target_id"], uid)
+                else:
+                    self.db.leave_mini_course_team(payload["target_id"], 0, uid)
+                self.bot.send_message(uid, "Вы вышли из команды.", keyboard=self.main_kb(role))
+
+            elif action == "show_my_team":
+                event_id = payload.get("event_id")
+                mini_course_id = payload.get("mini_course_id")
+                if event_id:
+                    team = self.db.get_my_team_for_event(event_id, uid)
+                    if team:
+                        members = team.get('team_members', '') or ''
+                        self.bot.send_message(uid, f"📅 Ваша команда:\n🏷 {members}", keyboard=self.main_kb(role))
+                    else:
+                        self.bot.send_message(uid, "Вы не состоите в команде.", keyboard=self.main_kb(role))
+                elif mini_course_id:
+                    self.bot.send_message(uid, "Вы записаны на этот мини-курс.", keyboard=self.main_kb(role))
+
+            elif action == "start_fair":
+                if role != "super_admin":
+                    return self.bot.send_message(uid, "Эта команда доступна только супер-админу.", keyboard=self.main_kb(role))
+                self._set_state(uid, "WAIT_FAIR_BUDGET", {"event_id": payload["event_id"]})
+                self.bot.send_message(uid, "Введите начальный бюджет для каждой команды:", keyboard=self.wait_kb())
+
+            elif action == "resolve_complaint":
+                if role not in ("admin", "super_admin"):
+                    return self.bot.send_message(uid, "Эта команда доступна только админу.", keyboard=self.main_kb(role))
+                self.db.resolve_complaint(payload["complaint_id"])
+                self.bot.send_message(uid, f"✅ Жалоба #{payload['complaint_id']} решена.", keyboard=self.main_kb(role))
+
+            elif action == "select_participant":
+                if role not in ("admin", "super_admin"):
+                    return self.bot.send_message(uid, "Эта команда доступна только админу.", keyboard=self.main_kb(role))
+                participant_id = payload["participant_id"]
+                self._set_state(uid, "WAIT_TOP_UP_AMOUNT", {"participant_id": participant_id})
+                self.bot.send_message(uid, "Введите сумму для пополнения баланса:", keyboard=self.wait_kb())
+
+            elif action == "participant_page":
+                if role not in ("admin", "super_admin"):
+                    return self.bot.send_message(uid, "Эта команда доступна только админу.", keyboard=self.main_kb(role))
+                ctx = self.states.get(uid, {}).get("ctx", {})
+                ctx["page"] = payload["page"]
+                self.states[uid]["ctx"] = ctx
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": "Выберите участника для пополнения баланса:",
+                    "keyboard": self.participant_selection_kb(ctx).get_keyboard()
+                })
+
+            elif action == "select_event":
+                event_id = payload["event_id"]
+                ev = self.db.get_event(event_id)
+                if not ev:
+                    return self.bot.send_message(uid, "Мероприятие не найдено.", keyboard=self.main_kb(role))
+                if not ev.get('is_active', 0):
+                    return self.bot.send_message(uid, "Это мероприятие не активно.", keyboard=self.main_kb(role))
+
+                # Проверяем, не состоит ли пользователь уже в команде
+                my_team = self.db.get_my_team_for_event(event_id, uid)
+                if my_team:
+                    return self.bot.send_message(uid, "Вы уже состоите в команде для этого мероприятия.", keyboard=self.main_kb(role))
+
+                # Получаем свободных участников (не в командах)
+                free_participants = self.db.get_unregistered_participants_for_event(event_id, uid)
+                if not free_participants:
+                    return self.bot.send_message(uid, "Нет свободных участников для формирования команды.", keyboard=self.main_kb(role))
+
+                # Текущий пользователь автоматически в команде
+                self._set_state(uid, "SELECTING_TEAM", {
+                    "target": "event",
+                    "target_id": event_id,
+                    "users": free_participants,
+                    "selected": [uid],
+                    "page": 0
+                })
+
+                ctx = self.states[uid]["ctx"]
+                self.bot.send_message(
+                    uid,
+                    self.team_selection_text(ctx),
+                    keyboard=self.team_selection_kb(ctx)
+                )
+
+            elif action == "select_mini_course":
+                mini_course_id = payload["mini_course_id"]
+                mc = self.db.get_mini_course(mini_course_id)
+                if not mc:
+                    return self.bot.send_message(uid, "Мини-курс не найден.", keyboard=self.main_kb(role))
+
+                time_slots = self.db.get_time_slots(mini_course_id)
+                if not time_slots:
+                    return self.bot.send_message(uid, "Нет доступных временных слотов для этого курса.", keyboard=self.main_kb(role))
+
+                kb = Keyboard(inline=True)
+                for i, slot in enumerate(time_slots):
+                    registered_count = self.db.get_mini_course_registrations(mini_course_id)
+                    cnt = sum(1 for r in registered_count if r.get('time_slot_id') == slot['id'])
+                    free = mc['max_participants'] - cnt
+                    label = f"{slot['time']} (ост. {free})"
+                    color = "secondary" if free <= 0 else "primary"
+                    kb.add_callback_button(
+                        label, color=color,
+                        payload=json.dumps({"action": "select_time_slot", "mini_course_id": mini_course_id, "time_slot_id": slot['id']})
+                    )
+                    if i < len(time_slots) - 1:
+                        kb.add_line()
+
+                self.bot.send_message(uid, f"📚 {mc['name']}\n{mc['description']}\n\nВыберите время:", keyboard=kb)
+
+            elif action == "select_time_slot":
+                mini_course_id = payload["mini_course_id"]
+                time_slot_id = payload["time_slot_id"]
+                mc = self.db.get_mini_course(mini_course_id)
+                if not mc:
+                    return self.bot.send_message(uid, "Мини-курс не найден.", keyboard=self.main_kb(role))
+
+                # Индивидуальная запись на мини-курс
+                ok, msg = self.db.register_mini_course_individual(mini_course_id, time_slot_id, uid)
+                self.bot.send_message(uid, "✅ " + msg if ok else "❌ " + msg, keyboard=self.main_kb(role))
+
+        except Exception as e:
+            logger.error("Callback error: %s", e, exc_info=True)
+
+    # === Маппинг текста в команды ===
+    @staticmethod
+    def _text_to_cmd(t: str) -> Optional[str]:
+        aliases = {
+            "войти": "login", "баланс": "balance", "мероприятия": "events",
+            "настройки": "settings", "назад": "back", "отмена": "cancel",
+            "мини-курсы": "mini_courses", "жалоба": "complaint",
+            "красная кнопка": "complaint", "участники": "participants",
+        }
+        return aliases.get(t.lower())
+
+    # === Роутинг команд ===
+    def route_command(self, uid: int, role: str, cmd: str, p: Optional[Dict]):
         if cmd == "login":
-            if participant:
-                return self.send(user_id, f"Вы уже вошли в систему как {participant['first_name']} {participant['last_name']}.", self._main_kb(role, participant))
+            if p:
+                return self.bot.send_message(uid, f"Вы уже вошли как {p['first_name']}.", keyboard=self.main_kb(role))
+            self._set_state(uid, "WAIT_CODE")
+            self.bot.send_message(uid, "Введите персональный код:", keyboard=self.wait_kb())
 
-            self._set_state(user_id, S["WAIT_PERSONAL_CODE"])
-            return self.send(user_id, "Пожалуйста, введите ваш персональный код:", self._wait_kb())
-
-        if cmd == "balance":
-            if not participant:
-                return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
-
-            balance = self.db.get_participant_balance(participant['id'])
-            history = self.db.get_balance_history(participant['id'])
-
-            lines = [f"Ваш текущий баланс: {self._money(balance)}"]
+        elif cmd == "balance":
+            if not p:
+                return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
+            balance = self.db.get_participant_balance(p['id'])
+            history = self.db.get_balance_history(p['id']) if hasattr(self.db, 'get_balance_history') else []
+            lines = [f"💰 Ваш баланс: {balance} баллов"]
             if history:
-                lines.append("\nИстория операций:")
+                lines.append("\n📜 История:")
                 for item in history:
-                    amount_sign = "+" if item['amount'] > 0 else ""
-                    lines.append(f"- {amount_sign}{self._money(item['amount'])}: {item['description']} ({item['created_at']})")
+                    sign = "+" if item['amount'] > 0 else ""
+                    lines.append(f"  {sign}{item['amount']}: {item['description']} ({item['created_at']})")
+            self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
 
-            return self.send(user_id, "\n".join(lines), self._main_kb(role, participant))
+        elif cmd == "register_event":
+            if not p:
+                return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
+            evts = self.db.get_active_events()
+            if not evts:
+                return self.bot.send_message(uid, "Нет активных мероприятий.", keyboard=self.main_kb(role))
+            kb = Keyboard(inline=True)
+            for i, e in enumerate(evts):
+                my_team = self.db.get_my_team_for_event(e['id'], uid)
+                if my_team:
+                    members = [m.strip() for m in my_team['team_members'].split(',') if m.strip()]
+                    names = ", ".join(members)
+                    kb.add_callback_button(
+                        e['name'], color="secondary",
+                        payload=json.dumps({"action": "show_my_team", "event_id": e['id'], "names": names})
+                    )
+                    if self.db.can_cancel_registration(e['id'], uid):
+                        kb.add_callback_button(
+                            "Выйти", color="negative",
+                            payload=json.dumps({"action": "leave_team", "target": "event", "target_id": e['id']})
+                        )
+                else:
+                    kb.add_callback_button(
+                        e['name'], color="primary",
+                        payload=json.dumps({"action": "select_event", "event_id": e['id']})
+                    )
+                if i < len(evts) - 1:
+                    kb.add_line()
+            self.bot.send_message(uid, "Выберите мероприятие:", keyboard=kb)
 
-        if cmd == "register_event":
-            if not participant:
-                return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
+        elif cmd == "register_mini_course":
+            if not p:
+                return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
+            mcs = self.db.get_published_mini_courses_with_stats()
+            if not mcs:
+                return self.bot.send_message(uid, "Нет опубликованных курсов.", keyboard=self.main_kb(role))
 
-            events = self.db.get_active_events()
-            if not events:
-                return self.send(user_id, "В настоящее время нет активных мероприятий.", self._main_kb(role, participant))
+            lines = ["📚 Доступные мини-курсы:\n"]
+            kb = Keyboard(inline=True)
+            for i, mc in enumerate(mcs):
+                slots_info = []
+                for s in mc.get('slots', []):
+                    free = mc['max_participants'] - s['registered']
+                    slots_info.append(f"{s['time']} (ост. {free})")
+                slots_str = ", ".join(slots_info)
+                lines.append(f"🔹 {mc['name']}")
+                lines.append(f"   {mc['description']}")
+                lines.append(f"   👥 Записано: {mc['total_registered']}/{mc['max_participants']}")
+                lines.append(f"   ⏰ {slots_str}\n")
 
-            buttons = [
-                {
-                    "label": event['name'],
-                    "payload": {"action": "select_event", "event_id": event['id']},
-                    "color": "primary",
-                }
-                for event in events
-            ]
+                already = False
+                for s in mc.get('slots', []):
+                    if self.db.get_my_mini_course_team(mc['id'], s['id'], uid):
+                        already = True
+                        break
 
-            return self.send(user_id, "Выберите мероприятие для регистрации:", self._inline_kb(buttons))
+                if already:
+                    kb.add_callback_button(
+                        mc['name'], color="secondary",
+                        payload=json.dumps({"action": "show_my_team", "mini_course_id": mc['id']})
+                    )
+                    kb.add_callback_button(
+                        "Отменить", color="negative",
+                        payload=json.dumps({"action": "leave_team", "target": "mini_course", "target_id": mc['id']})
+                    )
+                else:
+                    kb.add_callback_button(
+                        mc['name'], color="primary",
+                        payload=json.dumps({"action": "select_mini_course", "mini_course_id": mc['id']})
+                    )
+                if i < len(mcs) - 1:
+                    kb.add_line()
 
-        if cmd == "register_mini_course":
-            if not participant:
-                return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
+            self.bot.send_message(uid, "\n".join(lines), keyboard=kb)
 
-            mini_courses = self.db.get_published_mini_courses()
-            if not mini_courses:
-                return self.send(user_id, "В настоящее время нет опубликованных мини-курсов.", self._main_kb(role, participant))
+        elif cmd == "complaint":
+            if not p:
+                return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
+            self._set_state(uid, "WAIT_COMPLAINT")
+            self.bot.send_message(uid, "Опишите вашу жалобу:", keyboard=self.wait_kb())
 
-            buttons = [
-                {
-                    "label": f"{mc['name']} (свободных мест: {mc['max_participants']})",
-                    "payload": {"action": "select_mini_course", "mini_course_id": mc['id']},
-                    "color": "primary",
-                }
-                for mc in mini_courses
-            ]
-
-            return self.send(user_id, "Выберите мини-курс для регистрации:", self._inline_kb(buttons))
-
-        if cmd == "mini_course_info":
-            mini_courses = self.db.get_published_mini_courses()
-            if not mini_courses:
-                return self.send(user_id, "В настоящее время нет опубликованных мини-курсов.", self._main_kb(role, participant))
-
-            lines = ["Информация о доступных мини-курсах:"]
-            for mc in mini_courses:
-                time_slots = self.db.get_time_slots(mc['id'])
-                slot_info = ", ".join([ts['time'] for ts in time_slots])
-                lines.append(f"\n{mc['name']}:")
-                lines.append(f"Описание: {mc['description']}")
-                lines.append(f"Время проведения: {slot_info}")
-                lines.append(f"Максимальное количество участников: {mc['max_participants']}")
-
-            return self.send(user_id, "\n".join(lines), self._main_kb(role, participant))
-
-        if cmd == "complaint":
-            if not participant:
-                return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
-
-            self._set_state(user_id, S["WAIT_COMPLAINT_MESSAGE"])
-            return self.send(user_id, "Пожалуйста, опишите вашу жалобу:", self._wait_kb())
-
-        if role == "admin" or role == "super_admin":
-            if cmd == "participants":
-                return self._send_participants_menu(user_id, role)
+        # === Админские команды ===
+        elif role in ("admin", "super_admin"):
             if cmd == "events":
-                return self._send_events_menu(user_id, role)
-            if cmd == "mini_courses":
-                return self._send_mini_courses_menu(user_id, role)
-            if cmd == "complaints":
-                return self._send_complaints(user_id, role)
-            if cmd == "settings":
-                return self._send_settings_menu(user_id, role)
-            if cmd == "add_admin":
-                if not self._is_super_admin_user(user_id):
-                    return self.send(user_id, "Только суперадмин может добавлять админов.", self._main_kb(role, participant))
-                self._set_state(user_id, S["WAIT_ADMIN_VK_TAG"])
-                return self.send(user_id, "Введите VK тег нового админа (например, @username):", self._wait_kb())
-            if cmd == "pre_register":
-                self._set_state(user_id, S["WAIT_PARTICIPANT_NAMES"])
-                return self.send(user_id, "Введите список участников через запятую в формате: Фамилия Имя, Фамилия Имя", self._wait_kb())
-            if cmd == "view_participants":
-                return self._view_participants(user_id, role)
-            if cmd == "create_event":
-                self._set_state(user_id, S["WAIT_EVENT_NAME"])
-                return self.send(user_id, "Введите название мероприятия:", self._wait_kb())
-            if cmd == "view_events":
-                return self._view_events(user_id, role)
-            if cmd == "create_mini_course":
-                self._set_state(user_id, S["WAIT_MINI_COURSE_NAME"])
-                return self.send(user_id, "Введите название мини-курса:", self._wait_kb())
-            if cmd == "publish_mini_courses":
-                count = self.db.publish_mini_courses()
-                return self.send(user_id, f"Опубликовано {count} мини-курсов.", self._main_kb(role, participant))
-            if cmd == "view_unpublished":
-                return self._view_unpublished_mini_courses(user_id, role)
-            if cmd == "view_published":
-                return self._view_published_mini_courses(user_id, role)
-            if cmd == "view_event_teams":
-                return self._view_event_teams(user_id, role)
-            if cmd == "view_mini_course_participants":
-                return self._view_mini_course_participants(user_id, role)
-            if cmd == "add_single_participant":
-                self._set_state(user_id, S["WAIT_SINGLE_PARTICIPANT_NAME"])
-                return self.send(user_id, "Введите фамилию и имя участника в формате: Фамилия Имя", self._wait_kb())
-            if cmd == "remove_participant":
-                self._set_state(user_id, S["WAIT_REMOVE_PARTICIPANT_CODE"])
-                return self.send(user_id, "Введите персональный код участника для удаления:", self._wait_kb())
+                kb = Keyboard(one_time=False, inline=False)
+                kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_event"}))
+                kb.add_line()
+                kb.add_button("Список", payload=json.dumps({"cmd": "view_events"}))
+                kb.add_line()
+                kb.add_button("Команды", payload=json.dumps({"cmd": "view_event_teams"}))
+                kb.add_line()
+                kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
+                self.bot.send_message(uid, "Меню мероприятий:", keyboard=kb)
 
-        self.send(user_id, "Эта команда недоступна для вашей роли.", self._main_kb(role, participant))
+            elif cmd == "mini_courses":
+                kb = Keyboard(one_time=False, inline=False)
+                kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_mini_course"}))
+                kb.add_line()
+                kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_mini_courses"}))
+                kb.add_line()
+                kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished"}))
+                kb.add_line()
+                kb.add_button("Опубликованные", payload=json.dumps({"cmd": "view_published"}))
+                kb.add_line()
+                kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
+                self.bot.send_message(uid, "Меню мини-курсов:", keyboard=kb)
 
-    def _handle_state_input(self, user_id: int, role: str, text: str, state: str, ctx: Dict[str, Any]) -> None:
-        participant = self.db.get_participant_by_user_id(user_id)
+            elif cmd == "complaints":
+                complaints = self.db.get_recent_complaints()
+                if not complaints:
+                    return self.bot.send_message(uid, "Новых жалоб нет.", keyboard=self.main_kb(role))
+                lines = ["🚨 Жалобы:"]
+                kb = Keyboard(inline=True)
+                for i, c in enumerate(complaints):
+                    lines.append(f"\n#{c['id']} | {c['first_name']} {c['last_name']}")
+                    lines.append(f"   📝 {c['message']}")
+                    lines.append(f"   ⏰ {c['created_at']}")
+                    kb.add_callback_button(
+                        f"Решить #{c['id']}", color="positive",
+                        payload=json.dumps({"action": "resolve_complaint", "complaint_id": c['id']})
+                    )
+                    if i < len(complaints) - 1:
+                        kb.add_line()
+                self.bot.send_message(uid, "\n".join(lines), keyboard=kb)
 
-        if state == S["WAIT_PERSONAL_CODE"]:
-            success, msg, participant_data = self.db.login_with_personal_code(user_id, text.strip())
-            self._clear_state(user_id)
-            if success:
-                new_role = participant_data.get("role", "participant")
-                return self.send(user_id, msg, self._main_kb(new_role, participant_data))
+            elif cmd == "settings":
+                kb = Keyboard(one_time=False, inline=False)
+                kb.add_button("Добавить админа", color="primary", payload=json.dumps({"cmd": "add_admin"}))
+                kb.add_line()
+                kb.add_button("Участники", payload=json.dumps({"cmd": "participants"}))
+                kb.add_line()
+                kb.add_button("Пополнить баланс", color="primary", payload=json.dumps({"cmd": "top_up_balance"}))
+                kb.add_line()
+                kb.add_button("Команды на мероприятиях", payload=json.dumps({"cmd": "admin_event_teams"}))
+                kb.add_line()
+                kb.add_button("Записи на мини-курсы", payload=json.dumps({"cmd": "admin_mini_course_regs"}))
+                kb.add_line()
+                if role == "super_admin":
+                    kb.add_button("🏪 Запустить/Остановить ярмарку", color="primary", payload=json.dumps({"cmd": "toggle_fair"}))
+                    kb.add_line()
+                kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
+                self.bot.send_message(uid, "Настройки:", keyboard=kb)
+
+            elif cmd == "add_admin":
+                invite_code = self.db.generate_admin_invite_code()
+                self.bot.send_message(uid, f"🔑 Сгенерирован пригласительный код для админа:\n\n`{invite_code}`\n\nОтправьте этот код человеку, которого хотите сделать админом. Он должен нажать 'Войти' и ввести этот код.", keyboard=self.main_kb(role))
+
+            elif cmd == "top_up_balance":
+                participants = self.db.get_all_participants()
+                if not participants:
+                    return self.bot.send_message(uid, "Нет участников для пополнения баланса.", keyboard=self.main_kb(role))
+                self._set_state(uid, "WAIT_SELECT_PARTICIPANT", {"participants": participants, "page": 0})
+                self.bot.send_message(uid, "Выберите участника для пополнения баланса:", keyboard=self.participant_selection_kb({"participants": participants, "page": 0}))
+
+            elif cmd == "create_event":
+                self._set_state(uid, "WAIT_EV_NAME")
+                self.bot.send_message(uid, "Введите название мероприятия:", keyboard=self.wait_kb())
+
+            elif cmd == "view_events":
+                evts = self.db.get_active_events()
+                if not evts:
+                    return self.bot.send_message(uid, "Нет мероприятий.", keyboard=self.main_kb(role))
+                lines = ["📅 Активные мероприятия:"]
+                for e in evts:
+                    lines.append(f"\n🔹 {e['name']}")
+                    lines.append(f"   📝 {e['description']}")
+                    lines.append(f"   👥 Команда: от {e['min_team_size']} до {e['max_team_size']}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "view_event_teams":
+                evts = self.db.get_active_events()
+                lines = ["📋 Команды на мероприятиях:"]
+                for e in evts:
+                    regs = self.db.get_event_teams_list(e['id'])
+                    lines.append(f"\n🔹 {e['name']}:")
+                    if not regs:
+                        lines.append("   ⚪ Нет команд")
+                    for r in regs:
+                        members = r.get('team_members', '') or ''
+                        lines.append(f"   👤 Капитан: {r['first_name']} {r['last_name']}")
+                        lines.append(f"      🏷 {members}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "create_mini_course":
+                self._set_state(uid, "WAIT_MC_NAME")
+                self.bot.send_message(uid, "Введите название мини-курса:", keyboard=self.wait_kb())
+
+            elif cmd == "publish_mini_courses":
+                count = self.db.publish_mini_courses() if hasattr(self.db, 'publish_mini_courses') else 0
+                self.bot.send_message(uid, f"✅ Опубликовано: {count} курсов.", keyboard=self.main_kb(role))
+
+            elif cmd == "view_unpublished":
+                mcs = self.db.get_unpublished_mini_courses() if hasattr(self.db, 'get_unpublished_mini_courses') else []
+                if not mcs:
+                    return self.bot.send_message(uid, "Нет неопубликованных курсов.", keyboard=self.main_kb(role))
+                lines = ["📚 Неопубликованные:"]
+                for mc in mcs:
+                    slots = self.db.get_time_slots(mc['id'])
+                    slot_str = ", ".join([s['time'] for s in slots])
+                    lines.append(f"\n🔸 {mc['name']}")
+                    lines.append(f"   📝 {mc['description']}")
+                    lines.append(f"   👥 Макс: {mc['max_participants']}")
+                    lines.append(f"   ⏰ {slot_str}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "view_published":
+                mcs = self.db.get_published_mini_courses()
+                if not mcs:
+                    return self.bot.send_message(uid, "Нет опубликованных курсов.", keyboard=self.main_kb(role))
+                lines = ["📚 Опубликованные:"]
+                for mc in mcs:
+                    slots = self.db.get_time_slots(mc['id'])
+                    slot_str = ", ".join([s['time'] for s in slots])
+                    regs = self.db.get_mini_course_registrations(mc['id']) if hasattr(self.db, 'get_mini_course_registrations') else []
+                    lines.append(f"\n🔹 {mc['name']}")
+                    lines.append(f"   📝 {mc['description']}")
+                    lines.append(f"   👥 Записано: {len(regs)}/{mc['max_participants']}")
+                    lines.append(f"   ⏰ {slot_str}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "participants":
+                kb = Keyboard(one_time=False, inline=False)
+                kb.add_button("Пред-регистрация", color="primary", payload=json.dumps({"cmd": "pre_register"}))
+                kb.add_line()
+                kb.add_button("Список", payload=json.dumps({"cmd": "view_participants"}))
+                kb.add_line()
+                kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
+                self.bot.send_message(uid, "Управление участниками:", keyboard=kb)
+
+            elif cmd == "pre_register":
+                self._set_state(uid, "WAIT_PARTICIPANT_NAMES")
+                self.bot.send_message(
+                    uid,
+                    "Введите список участников через запятую:\nФамилия Имя, Фамилия Имя",
+                    keyboard=self.wait_kb()
+                )
+
+            elif cmd == "view_participants":
+                parts = self.db.get_pre_registered_participants()
+                if not parts:
+                    return self.bot.send_message(uid, "Список пуст.", keyboard=self.main_kb(role))
+                lines = ["👥 Зарегистрированные:"]
+                for pr in parts:
+                    status = "✅" if pr['is_used'] else "⬜"
+                    lines.append(f"{status} {pr['last_name']} {pr['first_name']}: `{pr['personal_code']}`")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "admin_event_teams":
+                evts = self.db.get_active_events()
+                if not evts:
+                    return self.bot.send_message(uid, "Нет активных мероприятий.", keyboard=self.main_kb(role))
+                lines = ["📋 Команды на мероприятиях:"]
+                for e in evts:
+                    teams = self.db.get_event_teams_list(e['id'])
+                    lines.append(f"\n🔹 {e['name']}:")
+                    if not teams:
+                        lines.append("   ⚪ Нет команд")
+                    for t in teams:
+                        members = t.get('team_members', '') or ''
+                        lines.append(f"   👤 Капитан: {t['first_name']} {t['last_name']}")
+                        lines.append(f"      🏷 {members}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "admin_mini_course_regs":
+                mcs = self.db.get_published_mini_courses()
+                if not mcs:
+                    return self.bot.send_message(uid, "Нет опубликованных мини-курсов.", keyboard=self.main_kb(role))
+                lines = ["📚 Записи на мини-курсы:"]
+                for mc in mcs:
+                    regs = self.db.get_mini_course_full_registrations(mc['id'])
+                    lines.append(f"\n🔹 {mc['name']} ({len(regs)}/{mc['max_participants']}):")
+                    if not regs:
+                        lines.append("   ⚪ Нет записей")
+                    for r in regs:
+                        lines.append(f"   👤 {r['last_name']} {r['first_name']} — ⏰ {r['slot_time']}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "toggle_fair":
+                if self.db.is_fair_active():
+                    self.db.stop_fair()
+                    self.bot.send_message(uid, "🏪 Ярмарка остановлена.", keyboard=self.main_kb(role))
+                else:
+                    evts = self.db.get_active_events()
+                    if not evts:
+                        return self.bot.send_message(uid, "Нет активных мероприятий для запуска ярмарки.", keyboard=self.main_kb(role))
+
+                    # Фильтруем только мероприятия, подходящие для ярмарки
+                    fair_events = [e for e in evts if e.get('is_fair', 0) == 1]
+                    if not fair_events:
+                        return self.bot.send_message(uid, "Нет активных мероприятий, подходящих для ярмарки.", keyboard=self.main_kb(role))
+
+                    kb = Keyboard(inline=True)
+                    for i, e in enumerate(fair_events):
+                        kb.add_callback_button(
+                            e['name'], color="primary",
+                            payload=json.dumps({"action": "start_fair", "event_id": e['id']})
+                        )
+                        if i < len(fair_events) - 1:
+                            kb.add_line()
+                    self.bot.send_message(uid, "Выберите мероприятие для запуска ярмарки:", keyboard=kb)
+
             else:
-                return self.send(user_id, msg, self._main_kb(role, participant))
+                self.bot.send_message(uid, "Команда не распознана.", keyboard=self.main_kb(role))
+        else:
+            self.bot.send_message(uid, "Эта команда недоступна.", keyboard=self.main_kb(role))
 
-        if state == S["WAIT_ADMIN_VK_TAG"] and (role == "admin" or role == "super_admin"):
-            success, msg = self.db.add_admin_by_vk_tag(user_id, text.strip())
-            self._clear_state(user_id)
-            return self.send(user_id, msg, self._main_kb(role, participant))
+    # === Обработка FSM (текстовый ввод) ===
+    def process_fsm(self, uid: int, role: str, text: str, state: str, ctx: Dict):
+        p = self.db.get_participant_by_user_id(uid)
 
-        if state == S["WAIT_PARTICIPANT_NAMES"] and (role == "admin" or role == "super_admin"):
-            names_list = [name.strip() for name in text.split(",") if name.strip()]
-            results = self.db.pre_register_participants(names_list)
+        if state == "WAIT_CODE":
+            # Пробуем сначала как пригласительный код админа
+            ok, msg, pd = self.db.login_with_admin_invite(uid, text.strip())
+            if ok:
+                self._clear_state(uid)
+                new_role = pd.get("role") if pd else role
+                self.bot.send_message(uid, msg, keyboard=self.main_kb(new_role))
+                return
+            # Если не получилось, пробуем как персональный код участника
+            ok, msg, pd = self.db.login_with_personal_code(uid, text.strip())
+            self._clear_state(uid)
+            new_role = pd.get("role") if pd else role
+            self.bot.send_message(uid, msg, keyboard=self.main_kb(new_role))
 
-            success_count = sum(1 for r in results if r['success'])
-            error_messages = [r['error'] for r in results if not r['success'] and 'error' in r]
+        elif state == "WAIT_COMPLAINT":
+            if not p:
+                self._clear_state(uid)
+                return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
+            self.db.submit_complaint(p['id'], text)
+            self._clear_state(uid)
+            self.bot.send_message(uid, "✅ Жалоба отправлена. Спасибо!", keyboard=self.main_kb(role))
 
-            lines = [f"Обработано {len(results)} участников, успешно: {success_count}"]
-            if error_messages:
-                lines.append("\nОшибки:")
-                lines.extend(error_messages)
+        elif state == "WAIT_ADMIN_ID":
+            vk_id = text.strip().lstrip('@')
+            if not vk_id.isdigit():
+                return self.bot.send_message(uid, "❌ Введите числовой ID (например: 123456789)", keyboard=self.wait_kb())
+            info = self.bot.send_api_method("users.get", {"user_ids": int(vk_id)})
+            if not info or len(info) == 0:
+                return self.bot.send_message(uid, "❌ Пользователь не найден в VK.", keyboard=self.wait_kb())
+            ok, msg = self.db.add_admin_by_vk_id(int(vk_id), info[0]["first_name"], info[0]["last_name"])
+            self._clear_state(uid)
+            self.bot.send_message(uid, msg, keyboard=self.main_kb(role))
 
-            # Show the generated codes
-            lines.append("\nСгенерированные коды:")
-            for result in results:
-                if result['success']:
-                    lines.append(f"{result['name']}: {result['personal_code']}")
+        elif state == "WAIT_PARTICIPANT_NAMES":
+            names = [n.strip() for n in text.split(",") if n.strip()]
+            results = self.db.pre_register_participants(names)
+            lines = [f"📋 Обработано: {len(results)}"]
+            for r in results:
+                if r['success']:
+                    lines.append(f"✅ {r['name']}: `{r['personal_code']}`")
+                else:
+                    lines.append(f"❌ {r['name']}: {r.get('error', 'Ошибка')}")
+            self._clear_state(uid)
+            self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
 
-            self._clear_state(user_id)
-            return self.send(user_id, "\n".join(lines), self._main_kb(role, participant))
-
-        if state == S["WAIT_SINGLE_PARTICIPANT_NAME"] and (role == "admin" or role == "super_admin"):
-            parts = text.strip().split()
-            if len(parts) < 2:
-                return self.send(user_id, "Некорректный формат. Используйте 'Фамилия Имя'", self._wait_kb())
-
-            last_name = parts[0]
-            first_name = ' '.join(parts[1:])
-
-            success, msg, personal_code = self.db.add_single_participant(first_name, last_name)
-            self._clear_state(user_id)
-
-            if success:
-                return self.send(user_id, msg, self._main_kb(role, participant))
-            else:
-                return self.send(user_id, msg, self._main_kb(role, participant))
-
-        if state == S["WAIT_REMOVE_PARTICIPANT_CODE"] and (role == "admin" or role == "super_admin"):
-            success, msg = self.db.remove_pre_registered_participant(text.strip())
-            self._clear_state(user_id)
-
-            if success:
-                return self.send(user_id, msg, self._main_kb(role, participant))
-            else:
-                return self.send(user_id, msg, self._main_kb(role, participant))
-
-        if state == S["WAIT_COMPLAINT_MESSAGE"]:
-            if not participant:
-                return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
-
-            success = self.db.submit_complaint(participant['id'], text)
-            self._clear_state(user_id)
-
-            if success:
-                return self.send(user_id, "Ваша жалоба отправлена администратору. Спасибо!", self._main_kb(role, participant))
-            else:
-                return self.send(user_id, "Не удалось отправить жалобу. Пожалуйста, попробуйте позже.", self._main_kb(role, participant))
-
-        if role == "admin" or role == "super_admin":
-            return self._handle_admin_state(user_id, role, text, state, ctx)
-
-        self._clear_state(user_id)
-        self.send(user_id, "Действие сброшено.", self._main_kb(role, participant))
-
-    def _view_events(self, user_id: int, role: str):
-        events = self.db.get_active_events()
-        if not events:
-            return self.send(user_id, "Активных мероприятий пока нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Список активных мероприятий:"]
-        for event in events:
-            lines.append(f"\n{event['name']}:")
-            lines.append(f"Описание: {event['description']}")
-            lines.append(f"Размер команды: {event['team_size']}")
-
-        return self.send(user_id, "\n".join(lines), self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _view_unpublished_mini_courses(self, user_id: int, role: str):
-        mini_courses = self.db.get_unpublished_mini_courses()
-        if not mini_courses:
-            return self.send(user_id, "Неопубликованных мини-курсов пока нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Список неопубликованных мини-курсов:"]
-        for mc in mini_courses:
-            time_slots = self.db.get_time_slots(mc['id'])
-            slot_info = ", ".join([ts['time'] for ts in time_slots])
-            lines.append(f"\n{mc['name']}:")
-            lines.append(f"Описание: {mc['description']}")
-            lines.append(f"Макс. участников: {mc['max_participants']}")
-            lines.append(f"Слоты времени: {slot_info}")
-
-        return self.send(user_id, "\n".join(lines), self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _view_published_mini_courses(self, user_id: int, role: str):
-        mini_courses = self.db.get_published_mini_courses()
-        if not mini_courses:
-            return self.send(user_id, "Опубликованных мини-курсов пока нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Список опубликованных мини-курсов:"]
-        for mc in mini_courses:
-            time_slots = self.db.get_time_slots(mc['id'])
-            slot_info = ", ".join([ts['time'] for ts in time_slots])
-            registrations = self.db.get_mini_course_registrations(mc['id'])
-            lines.append(f"\n{mc['name']}:")
-            lines.append(f"Описание: {mc['description']}")
-            lines.append(f"Макс. участников: {mc['max_participants']}")
-            lines.append(f"Слоты времени: {slot_info}")
-            lines.append(f"Зарегистрировано: {len(registrations)} участников")
-
-        return self.send(user_id, "\n".join(lines), self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _handle_admin_state(self, user_id: int, role: str, text: str, state: str, ctx: Dict[str, Any]) -> None:
-        participant = self.db.get_participant_by_user_id(user_id)
-
-        if state == S["WAIT_EVENT_NAME"]:
+        # === FSM создания мероприятия ===
+        elif state == "WAIT_EV_NAME":
             ctx["name"] = text.strip()
-            self._set_state(user_id, S["WAIT_EVENT_DESCRIPTION"], ctx)
-            return self.send(user_id, "Введите описание мероприятия:", self._wait_kb())
+            self._set_state(uid, "WAIT_EV_DESC", ctx)
+            self.bot.send_message(uid, "Введите описание мероприятия:", keyboard=self.wait_kb())
 
-        if state == S["WAIT_EVENT_DESCRIPTION"]:
-            ctx["description"] = text.strip()
-            self._set_state(user_id, S["WAIT_EVENT_TEAM_SIZE"], ctx)
-            return self.send(user_id, "Введите размер команды (количество участников):", self._wait_kb())
+        elif state == "WAIT_EV_DESC":
+            ctx["desc"] = text.strip()
+            self._set_state(uid, "WAIT_EV_MIN", ctx)
+            self.bot.send_message(uid, "Введите МИНИМАЛЬНЫЙ размер команды:", keyboard=self.wait_kb())
 
-        if state == S["WAIT_EVENT_TEAM_SIZE"]:
+        elif state == "WAIT_EV_MIN":
             try:
-                team_size = int(text.strip())
-                if team_size <= 0:
-                    raise ValueError("Team size must be positive")
+                val = int(text.strip())
+                if val <= 0:
+                    raise ValueError
+                ctx["min"] = val
+                self._set_state(uid, "WAIT_EV_MAX", ctx)
+                self.bot.send_message(uid, "Введите МАКСИМАЛЬНЫЙ размер команды:", keyboard=self.wait_kb())
             except ValueError:
-                return self.send(user_id, "Пожалуйста, введите целое положительное число.", self._wait_kb())
+                self.bot.send_message(uid, "❌ Введите положительное целое число.", keyboard=self.wait_kb())
 
-            event_id = self.db.create_event(
-                ctx["name"],
-                ctx["description"],
-                team_size
-            )
-            self._clear_state(user_id)
-            return self.send(user_id, f"Мероприятие создано с ID: {event_id}", self._main_kb(role, participant))
+        elif state == "WAIT_EV_MAX":
+            try:
+                val = int(text.strip())
+                if val < ctx.get("min", 1):
+                    raise ValueError
+                eid = self.db.create_event(ctx["name"], ctx["desc"], ctx["min"], val)
+                self._clear_state(uid)
+                self.bot.send_message(uid, f"✅ Мероприятие создано (ID: {eid})", keyboard=self.main_kb(role))
+            except ValueError:
+                self.bot.send_message(uid, "❌ Максимум должен быть >= минимума. Повторите:", keyboard=self.wait_kb())
 
-        if state == S["WAIT_MINI_COURSE_NAME"]:
+        # === FSM создания мини-курса ===
+        elif state == "WAIT_MC_NAME":
             ctx["name"] = text.strip()
-            self._set_state(user_id, S["WAIT_MINI_COURSE_DESCRIPTION"], ctx)
-            return self.send(user_id, "Введите описание мини-курса:", self._wait_kb())
+            self._set_state(uid, "WAIT_MC_DESC", ctx)
+            self.bot.send_message(uid, "Введите описание мини-курса:", keyboard=self.wait_kb())
 
-        if state == S["WAIT_MINI_COURSE_DESCRIPTION"]:
-            ctx["description"] = text.strip()
-            self._set_state(user_id, S["WAIT_MINI_COURSE_MAX_PARTICIPANTS"], ctx)
-            return self.send(user_id, "Введите максимальное количество участников:", self._wait_kb())
+        elif state == "WAIT_MC_DESC":
+            ctx["desc"] = text.strip()
+            self._set_state(uid, "WAIT_MC_MAX", ctx)
+            self.bot.send_message(uid, "Введите максимальное количество участников:", keyboard=self.wait_kb())
 
-        if state == S["WAIT_MINI_COURSE_MAX_PARTICIPANTS"]:
+        elif state == "WAIT_MC_MAX":
             try:
-                max_participants = int(text.strip())
-                if max_participants <= 0:
-                    raise ValueError("Max participants must be positive")
+                val = int(text.strip())
+                if val <= 0:
+                    raise ValueError
+                ctx["max"] = val
+                self._set_state(uid, "WAIT_MC_SLOTS", ctx)
+                self.bot.send_message(uid, "Введите временные слоты через запятую:\n11:00, 13:00, 15:00", keyboard=self.wait_kb())
             except ValueError:
-                return self.send(user_id, "Пожалуйста, введите целое положительное число.", self._wait_kb())
+                self.bot.send_message(uid, "❌ Введите положительное целое число.", keyboard=self.wait_kb())
 
-            ctx["max_participants"] = max_participants
-            self._set_state(user_id, S["WAIT_MINI_COURSE_TIME_SLOTS"], ctx)
-            return self.send(user_id, "Введите слоты времени через запятую (например: 11:00, 13:00):", self._wait_kb())
-
-        if state == S["WAIT_MINI_COURSE_TIME_SLOTS"]:
-            time_slots = [slot.strip() for slot in text.split(",") if slot.strip()]
-
-            mini_course_id = self.db.create_mini_course(
-                ctx["name"],
-                ctx["description"],
-                ctx["max_participants"]
+        elif state == "WAIT_MC_SLOTS":
+            slots = [s.strip() for s in text.split(",") if s.strip()]
+            mc_id = self.db.create_mini_course(ctx["name"], ctx["desc"], ctx["max"])
+            for slot in slots:
+                self.db.add_time_slot(mc_id, slot)
+            self._clear_state(uid)
+            self.bot.send_message(
+                uid,
+                f"✅ Мини-курс создан (ID: {mc_id})\nСлоты: {', '.join(slots)}\n\nОпубликуйте через меню.",
+                keyboard=self.main_kb(role)
             )
 
-            for time_slot in time_slots:
-                self.db.add_time_slot(mini_course_id, time_slot)
-
-            self._clear_state(user_id)
-            return self.send(user_id, f"Мини-курс создан с ID: {mini_course_id}. Вы можете опубликовать его в меню мини-курсов.", self._main_kb(role, participant))
-
-        if state == S["WAIT_BALANCE_AMOUNT"]:
+        # === FSM пополнения баланса ===
+        elif state == "WAIT_TOP_UP_AMOUNT":
             try:
                 amount = int(text.strip())
+                if amount <= 0:
+                    raise ValueError
+                participant_id = ctx["participant_id"]
+                participant = self.db.get_participant_by_user_id(participant_id)
+                if not participant:
+                    raise ValueError("Участник не найден")
+                self.db.add_balance_to_participant(participant_id, amount, f"Пополнение от админа")
+                self._clear_state(uid)
+                self.bot.send_message(uid, f"✅ Баланс участника {participant['first_name']} {participant['last_name']} пополнен на {amount} баллов.", keyboard=self.main_kb(role))
+            except ValueError as e:
+                self.bot.send_message(uid, f"❌ {str(e) if str(e) != 'Участник не найден' else 'Введите положительное целое число.'}", keyboard=self.wait_kb())
+
+        # === FSM запуска ярмарки ===
+        elif state == "WAIT_FAIR_BUDGET":
+            try:
+                budget = int(text.strip())
+                if budget <= 0:
+                    raise ValueError
+                self.db.start_fair(ctx["event_id"], budget)
+                self._clear_state(uid)
+                self.bot.send_message(uid, f"🏪 Ярмарка запущена! Начальный бюджет для каждой команды: {budget} монет.", keyboard=self.main_kb(role))
             except ValueError:
-                return self.send(user_id, "Пожалуйста, введите целое число.", self._wait_kb())
+                self.bot.send_message(uid, "❌ Введите положительное целое число.", keyboard=self.wait_kb())
 
-            ctx["amount"] = amount
-            self._set_state(user_id, S["WAIT_BALANCE_DESCRIPTION"], ctx)
-            return self.send(user_id, "Введите описание операции:", self._wait_kb())
-
-        if state == S["WAIT_BALANCE_DESCRIPTION"]:
-            success = self.db.update_balance(
-                ctx["participant_id"],
-                ctx["amount"],
-                text.strip(),
-                user_id
-            )
-            self._clear_state(user_id)
-
-            if success:
-                return self.send(user_id, "Баланс участника успешно обновлен.", self._main_kb(role, participant))
-            else:
-                return self.send(user_id, "Не удалось обновить баланс.", self._main_kb(role, participant))
-
-        self._clear_state(user_id)
-        self.send(user_id, "Действие сброшено.", self._main_kb(role, participant))
-
-    def _select_event(self, user_id: int, role: str, event_id: int):
-        participant = self.db.get_participant_by_user_id(user_id)
-        if not participant:
-            return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
-
-        event = self.db.get_event(event_id)
-        if not event:
-            return self.send(user_id, "Мероприятие не найдено.", self._main_kb(role, participant))
-
-        self._set_state(user_id, S["WAIT_EVENT_TEAM_MEMBERS"], {"event_id": event_id})
-        return self.send(user_id, f"Мероприятие: {event['name']}\nОписание: {event['description']}\nРазмер команды: {event['team_size']}\n\nВведите участников команды через запятую в формате: Фамилия Имя, Фамилия Имя", self._wait_kb())
-
-    def _select_mini_course(self, user_id: int, role: str, mini_course_id: int):
-        participant = self.db.get_participant_by_user_id(user_id)
-        if not participant:
-            return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
-
-        mini_course = self.db.get_mini_course(mini_course_id)
-        if not mini_course:
-            return self.send(user_id, "Мини-курс не найден.", self._main_kb(role, participant))
-
-        time_slots = self.db.get_time_slots(mini_course_id)
-        if not time_slots:
-            return self.send(user_id, "Для этого мини-курса нет доступных слотов времени.", self._main_kb(role, participant))
-
-        buttons = [
-            {
-                "label": f"Записаться на {ts['time']}",
-                "payload": {"action": "select_time_slot", "mini_course_id": mini_course_id, "time_slot_id": ts['id']},
-                "color": "primary",
-            }
-            for ts in time_slots
-        ]
-
-        return self.send(user_id, f"Мини-курс: {mini_course['name']}\nОписание: {mini_course['description']}\n\nВыберите слот времени:", self._inline_kb(buttons))
-
-    def _select_time_slot(self, user_id: int, role: str, mini_course_id: int, time_slot_id: int):
-        participant = self.db.get_participant_by_user_id(user_id)
-        if not participant:
-            return self.send(user_id, "Вы должны сначала войти в систему.", self._main_kb(role, participant))
-
-        success, msg = self.db.register_for_mini_course(mini_course_id, participant['id'], time_slot_id)
-        if success:
-            return self.send(user_id, msg, self._main_kb(role, participant))
         else:
-            return self.send(user_id, msg, self._main_kb(role, participant))
-
-    def _send_participants_menu(self, user_id: int, role: str):
-        buttons = [
-            [{"label": "Предварительная регистрация", "cmd": "pre_register", "color": "primary"}],
-            [{"label": "Добавить участника", "cmd": "add_single_participant", "color": "primary"}],
-            [{"label": "Удалить участника", "cmd": "remove_participant", "color": "primary"}],
-            [{"label": "Посмотреть зарегистрированных", "cmd": "view_participants", "color": "primary"}],
-            [{"label": "Назад", "cmd": "back"}],
-        ]
-        return self.send(user_id, "Меню управления участниками:", self._reply_kb(buttons))
-
-    def _view_participants(self, user_id: int, role: str):
-        participants = self.db.get_pre_registered_participants()
-        if not participants:
-            return self.send(user_id, "Участников пока нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Список предварительно зарегистрированных участников:"]
-        for p in participants:
-            status = "ИСПОЛЬЗОВАН" if p['is_used'] else "ДОСТУПЕН"
-            lines.append(f"{p['last_name']} {p['first_name']}: {p['personal_code']} [{status}]")
-
-        return self.send(user_id, "\n".join(lines), self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _send_events_menu(self, user_id: int, role: str):
-        buttons = [
-            [{"label": "Создать мероприятие", "cmd": "create_event", "color": "primary"}],
-            [{"label": "Посмотреть активные мероприятия", "cmd": "view_events", "color": "primary"}],
-            [{"label": "Назад", "cmd": "back"}],
-        ]
-        return self.send(user_id, "Меню мероприятий:", self._reply_kb(buttons))
-
-    def _send_mini_courses_menu(self, user_id: int, role: str):
-        buttons = [
-            [{"label": "Создать мини-курс", "cmd": "create_mini_course", "color": "primary"}],
-            [{"label": "Опубликовать мини-курсы", "cmd": "publish_mini_courses", "color": "primary"}],
-            [{"label": "Посмотреть неопубликованные", "cmd": "view_unpublished", "color": "primary"}],
-            [{"label": "Посмотреть опубликованные", "cmd": "view_published", "color": "primary"}],
-            [{"label": "Назад", "cmd": "back"}],
-        ]
-        return self.send(user_id, "Меню мини-курсов:", self._reply_kb(buttons))
-
-    def _send_settings_menu(self, user_id: int, role: str):
-        buttons = [
-            [{"label": "Добавить админа", "cmd": "add_admin", "color": "primary"}],
-            [{"label": "Управление участниками", "cmd": "participants", "color": "primary"}],
-            [{"label": "Назад", "cmd": "back"}],
-        ]
-        return self.send(user_id, "Настройки админа:", self._reply_kb(buttons))
-
-    def _send_complaints(self, user_id: int, role: str):
-        complaints = self.db.get_recent_complaints(10)
-        if not complaints:
-            return self.send(user_id, "Новых жалоб нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Последние жалобы:"]
-        buttons = []
-
-        for complaint in complaints:
-            lines.append(f"\nЖалоба #{complaint['id']} от {complaint['first_name']} {complaint['last_name']} ({complaint['personal_code']}):")
-            lines.append(f"Сообщение: {complaint['message']}")
-            lines.append(f"Время: {complaint['created_at']}")
-
-            buttons.append({
-                "label": f"Пометить как решенную #{complaint['id']}",
-                "payload": {"action": "resolve_complaint", "complaint_id": complaint['id']},
-                "color": "positive",
-            })
-
-        return self.send(user_id, "\n".join(lines), self._inline_kb(buttons))
-
-    def _resolve_complaint(self, user_id: int, role: str, complaint_id: int):
-        if role != "admin" and role != "super_admin":
-            return self.send(user_id, "Недостаточно прав.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        success = self.db.resolve_complaint(complaint_id)
-        if success:
-            return self.send(user_id, "Жалоба помечена как решенная.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-        else:
-            return self.send(user_id, "Не удалось обновить статус жалобы.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _remove_admin(self, user_id: int, role: str, admin_id: int):
-        if not self._is_super_admin_user(user_id):
-            return self.send(user_id, "Удалять админов может только суперадмин.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        if user_id == admin_id:
-            return self.send(user_id, "Вы не можете удалить себя.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        # Check if this is the last super admin
-        super_admins = [p for p in self.db.get_admins() if self.db.get_participant_by_user_id(p).get('role') == 'super_admin']
-        if len(super_admins) <= 1 and self.db.get_participant_by_user_id(admin_id).get('role') == 'super_admin':
-            return self.send(user_id, "Это последний суперадмин. Нельзя удалить.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        success = self.db.set_admin_role(admin_id, 'participant')
-        if success:
-            return self.send(user_id, f"Админ {admin_id} понижен до участника.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-        else:
-            return self.send(user_id, "Не удалось удалить админа.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _view_event_teams(self, user_id: int, role: str):
-        events = self.db.get_active_events()
-        if not events:
-            return self.send(user_id, "Активных мероприятий пока нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Список команд на мероприятиях:"]
-        for event in events:
-            registrations = self.db.get_event_registration_details(event['id'])
-            if not registrations:
-                lines.append(f"\n{event['name']}: нет зарегистрированных команд")
-                continue
-
-            lines.append(f"\n{event['name']} (размер команды: {event['team_size']}):")
-            for reg in registrations:
-                team_members = reg['team_members'].split(', ')
-                lines.append(f"\n  Команда от {reg['first_name']} {reg['last_name']} ({reg['personal_code']}):")
-                for member in team_members:
-                    lines.append(f"    - {member}")
-
-        return self.send(user_id, "\n".join(lines), self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _view_mini_course_participants(self, user_id: int, role: str):
-        mini_courses = self.db.get_published_mini_courses()
-        if not mini_courses:
-            return self.send(user_id, "Опубликованных мини-курсов пока нет.", self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-        lines = ["Список участников на мини-курсах:"]
-        for mc in mini_courses:
-            registrations = self.db.get_mini_course_registration_details(mc['id'])
-            if not registrations:
-                lines.append(f"\n{mc['name']}: нет зарегистрированных участников")
-                continue
-
-            lines.append(f"\n{mc['name']}:")
-            for reg in registrations:
-                lines.append(f"  {reg['first_name']} {reg['last_name']} ({reg['personal_code']}) - слот {reg['time']}")
-
-        return self.send(user_id, "\n".join(lines), self._main_kb(role, self.db.get_participant_by_user_id(user_id)))
-
-    def _help(self, role: str) -> str:
-        if role == "admin" or role == "super_admin":
-            return (
-                "Бот для лагеря управляет регистрацией участников, мероприятиями и мини-курсами.\n\n"
-                "Админ может создавать мероприятия, мини-курсы, управлять участниками и обрабатывать жалобы."
-            )
-        else:
-            return (
-                "Бот для лагеря позволяет участникам регистрироваться на мероприятия и мини-курсы.\n\n"
-                "Для начала работы нажмите 'Войти' и введите ваш персональный код."
-            )
+            self._clear_state(uid)
+            self.bot.send_message(uid, "Сессия сброшена.", keyboard=self.main_kb(role))

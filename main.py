@@ -1,77 +1,55 @@
 # main.py
-import logging
+import os
 import sys
-from config import config
-from database import DatabaseManager
-from bot_logic import CampBotLogic
-from vk_server import VKLongPollServer
+import logging
 
-def setup_logging(level: str):
-    """Настраивает логирование"""
+# 1. Загружаем конфиг
+from config import config
+
+# 2. ВАЖНО: Проксируем трафик ДО импорта pyvkbot и requests, если прокси указан в .env
+if config.HTTPS_PROXY:
+    os.environ["HTTPS_PROXY"] = config.HTTPS_PROXY
+    os.environ["HTTP_PROXY"] = config.HTTPS_PROXY
+    print(f"🌐 Используется прокси для обхода блокировки: {config.HTTPS_PROXY}")
+
+from pyvkbot import Bot
+from database import DatabaseManager
+from bot_logic import CampBot
+
+def main():
     logging.basicConfig(
-        level=getattr(logging, level, logging.INFO),
+        level=getattr(logging, config.LOG_LEVEL, logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler("bot.log", encoding="utf-8", mode="a")
+            logging.FileHandler("bot.log", encoding="utf-8")
         ]
     )
 
-def main():
-    # 1. Настройка логирования
-    setup_logging(config.LOG_LEVEL)
+    logging.getLogger("pyvkbot").setLevel(logging.INFO)
     logger = logging.getLogger(__name__)
 
-    # 2. Валидация конфигурации
-    errors = config.validate()
-    if errors:
-        logger.error("Конфигурация некорректна:")
-        for err in errors:
-            logger.error(f"   {err}")
-        if "VK_BOT_TOKEN" in str(errors) or "VK_GROUP_ID" in str(errors):
-            logger.error("Заполните файл .env и перезапустите бота")
-            sys.exit(1)
-
-    logger.info("Инициализация компонентов...")
-    logger.info(f"База данных: {config.DB_PATH}")
-    logger.info(f"Группа VK: {config.VK_GROUP_ID}")
-
-    # 3. Инициализация БД
-    try:
-        db = DatabaseManager(config.DB_PATH)
-        logger.info("База данных подключена")
-    except Exception as e:
-        logger.error(f"Ошибка подключения к БД: {e}")
+    if not config.VK_BOT_TOKEN or config.VK_GROUP_ID == 0:
+        logger.error("❌ Заполните VK_BOT_TOKEN и VK_GROUP_ID в .env")
         sys.exit(1)
 
-    # 4. Инициализация сервера VK
-    vk_server = VKLongPollServer(
-        token=config.VK_BOT_TOKEN,
-        group_id=config.VK_GROUP_ID,
-        api_version=config.LP_VERSION
-    )
-
-    # 5. Callback для отправки сообщений
-    def send_callback(user_id: int, text: str, keyboard_payload: dict = None):
-        if text:  # Не отправляем пустые сообщения
-            vk_server.send_message(user_id, text, keyboard_payload)
-
-    # 6. Инициализация бизнес-логики
-    bot = CampBotLogic(db, send_callback)
-
-    # 7. Запуск
-    logger.info("Все компоненты готовы. Запуск бота...")
-    logger.info("Нажмите Ctrl+C для остановки")
+    try:
+        db = DatabaseManager(config.DB_PATH)
+        logger.info("✅ База данных подключена")
+    except Exception as e:
+        logger.error(f"❌ Ошибка БД: {e}", exc_info=True)
+        sys.exit(1)
 
     try:
-        vk_server.start_polling(
-            message_handler=bot.handle_message,
-            callback_handler=bot.handle_callback
-        )
-    except KeyboardInterrupt:
-        logger.info("Бот остановлен пользователем")
+        # Инициализация нативного бота pyvkbot
+        bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+        CampBot(bot, db)
+
+        logger.info("🚀 Бот успешно запущен!")
+        bot.start_polling()
     except Exception as e:
-        logger.error(f"Критическая ошибка: {e}", exc_info=True)
+        logger.error(f"💥 Критическая ошибка при запуске: {e}", exc_info=True)
+        logger.error("💡 Если ошибка связана с 'getaddrinfo failed' или 'api.vk.com', проверьте настройки прокси в .env или запустите бота на VPS-сервере.")
         sys.exit(1)
 
 if __name__ == "__main__":
