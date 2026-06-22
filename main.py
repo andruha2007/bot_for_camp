@@ -17,11 +17,23 @@ from database import DatabaseManager
 from bot_logic import CampBot
 
 def main():
+    class SafeStreamHandler(logging.StreamHandler):
+        def emit(self, record):
+            try:
+                super().emit(record)
+            except UnicodeEncodeError:
+                msg = self.format(record)
+                try:
+                    sys.stdout.buffer.write((msg + self.terminator).encode("utf-8", errors="replace"))
+                    sys.stdout.buffer.flush()
+                except Exception:
+                    pass
+
     logging.basicConfig(
         level=getattr(logging, config.LOG_LEVEL, logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
-            logging.StreamHandler(sys.stdout),
+            SafeStreamHandler(sys.stdout),
             logging.FileHandler("bot.log", encoding="utf-8")
         ]
     )
@@ -30,26 +42,25 @@ def main():
     logger = logging.getLogger(__name__)
 
     if not config.VK_BOT_TOKEN or config.VK_GROUP_ID == 0:
-        logger.error("❌ Заполните VK_BOT_TOKEN и VK_GROUP_ID в .env")
+        logger.error("Zapolnite VK_BOT_TOKEN i VK_GROUP_ID v .env")
         sys.exit(1)
 
     try:
         db = DatabaseManager(config.DB_PATH)
-        logger.info("✅ База данных подключена")
+        logger.info("Baza dannyh podklyuchena")
     except Exception as e:
-        logger.error(f"❌ Ошибка БД: {e}", exc_info=True)
+        logger.error(f"Oshibka BD: {e}", exc_info=True)
         sys.exit(1)
 
     try:
-        # Инициализация нативного бота pyvkbot
         bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
         CampBot(bot, db)
 
-        logger.info("🚀 Бот успешно запущен!")
+        logger.info("Bot uspeshno zapushchen!")
         bot.start_polling()
     except Exception as e:
-        logger.error(f"💥 Критическая ошибка при запуске: {e}", exc_info=True)
-        logger.error("💡 Если ошибка связана с 'getaddrinfo failed' или 'api.vk.com', проверьте настройки прокси в .env или запустите бота на VPS-сервере.")
+        logger.error(f"Kriticheskaya oshibka pri zapuske: {e}", exc_info=True)
+        logger.error("Esli oshibka svyazana s 'getaddrinfo failed' ili 'api.vk.com', proverte nastrojki proksi v .env ili zapustite bota na VPS-servere.")
         sys.exit(1)
 
 if __name__ == "__main__":

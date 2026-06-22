@@ -1190,7 +1190,7 @@ class DatabaseManager:
                 try:
                     conn.execute("INSERT INTO pre_registered_participants (first_name, last_name, personal_code) VALUES (?, ?, ?)", (fn, ln, pc))
                     res.append({'success': True, 'name': f"{ln} {fn}", 'personal_code': pc})
-                except:
+                except Exception:
                     res.append({'success': False, 'name': f"{ln} {fn}", 'error': 'Уже есть'})
         return res
 
@@ -1649,6 +1649,22 @@ class DatabaseManager:
             return None
         return self.get_fair_team_by_user(user_id, event_id)
 
+    def get_participant_event_registrations(self, participant_id: int) -> List[Dict]:
+        """Все регистрации участника на мероприятия"""
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("""
+                SELECT er.* FROM event_registrations er
+                WHERE er.participant_id = ?
+            """, (participant_id,)).fetchall()]
+
+    def get_participant_mini_course_registrations(self, participant_id: int) -> List[Dict]:
+        """Все регистрации участника на мини-курсы"""
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("""
+                SELECT mcr.* FROM mini_course_registrations mcr
+                WHERE mcr.participant_id = ?
+            """, (participant_id,)).fetchall()]
+
     def get_event_registration_details(self, event_id: int) -> List[Dict]:
         with self._get_conn() as conn:
             return [dict(r) for r in conn.execute("""
@@ -1722,6 +1738,211 @@ class DatabaseManager:
                 WHERE is_closed=1
                 ORDER BY id DESC LIMIT 10
             """).fetchall()]
+
+    def get_open_or_last_closed_events(self) -> List[Dict]:
+        """Открытые мероприятия + последнее закрытое (для админа)"""
+        with self._get_conn() as conn:
+            open_evs = [dict(r) for r in conn.execute(
+                "SELECT * FROM events WHERE is_published=1 AND (is_closed IS NULL OR is_closed=0) ORDER BY id DESC"
+            ).fetchall()]
+            last_closed = conn.execute(
+                "SELECT * FROM events WHERE is_closed=1 ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if last_closed:
+                open_evs.append(dict(last_closed))
+            return open_evs
+
+    def get_open_or_last_closed_mini_courses(self) -> List[Dict]:
+        """Открытые мини-курсы + последние закрытые (для админа)"""
+        with self._get_conn() as conn:
+            open_mcs = [dict(r) for r in conn.execute(
+                "SELECT * FROM mini_courses WHERE is_published=1 AND (is_closed IS NULL OR is_closed=0) ORDER BY id DESC"
+            ).fetchall()]
+            last_closed = [dict(r) for r in conn.execute(
+                "SELECT * FROM mini_courses WHERE is_closed=1 ORDER BY id DESC LIMIT 10"
+            ).fetchall()]
+            closed_ids = {mc['id'] for mc in open_mcs}
+            for mc in last_closed:
+                if mc['id'] not in closed_ids:
+                    open_mcs.append(mc)
+            return open_mcs
+
+    def admin_register_participant_for_event(self, event_id: int, participant_user_id: int) -> Tuple[bool, str, Optional[int]]:
+        """Админ принудительно регистрирует участника на мероприятие.
+        Возвращает (success, message, captain_user_id)"""
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id, last_name, first_name FROM participants WHERE user_id=?", (participant_user_id,)).fetchone()
+            if not p:
+                return False, "Участник не найден", None
+
+            existing = conn.execute(
+                "SELECT 1 FROM event_registrations WHERE event_id=? AND participant_id=?",
+                (event_id, p['id'])
+            ).fetchone()
+            if existing:
+                return False, "Участник уже зарегистрирован на это мероприятие", None
+
+            ev = conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+            if not ev:
+                return False, "Мероприятие не найдено", None
+
+            # Ищем команды с местом
+            captains = conn.execute("""
+                SELECT DISTINCT er.participant_id, er.team_members
+                FROM event_registrations er
+                WHERE er.event_id=? AND er.captain_id = er.participant_id
+            """, (event_id,)).fetchall()
+
+            if not captains:
+                # Нет команд — создаём новую с этим участником как капитаном
+                conn.execute(
+                    "INSERT INTO event_registrations (event_id, participant_id, team_members, captain_id) VALUES (?, ?, '', ?)",
+                    (event_id, p['id'], p['id'])
+                )
+                return True, f"{p['last_name']} {p['first_name']} назначен капитаном новой команды", participant_user_id
+
+            best = None
+            best_size = float('inf')
+            for cap in captains:
+                members = [m.strip() for m in (cap['team_members'] or '').split(',') if m.strip()]
+                if len(members) < ev['max_team_size'] and len(members) < best_size:
+                    best = cap
+                    best_size = len(members)
+
+            if not best:
+                return False, "Нет свободных мест в командах", None
+
+            # Добавляем в лучшую команду
+            conn.execute(
+                "INSERT INTO event_registrations (event_id, participant_id, team_members, captain_id) VALUES (?, ?, '', ?)",
+                (event_id, p['id'], best['participant_id'])
+            )
+
+            cap_row = conn.execute(
+                "SELECT team_members FROM event_registrations WHERE event_id=? AND participant_id=?",
+                (event_id, best['participant_id'])
+            ).fetchone()
+            old = (cap_row['team_members'] or '').strip()
+            new_members = (f"{old}, {p['last_name']} {p['first_name']}").lstrip(', ')
+            conn.execute(
+                "UPDATE event_registrations SET team_members=? WHERE event_id=? AND participant_id=?",
+                (new_members, event_id, best['participant_id'])
+            )
+
+            cap_info = conn.execute(
+                "SELECT user_id FROM participants WHERE id=?", (best['participant_id'],)
+            ).fetchone()
+            captain_uid = cap_info['user_id'] if cap_info else None
+
+            return True, f"{p['last_name']} {p['first_name']} добавлен в команду", captain_uid
+
+    def admin_register_participant_for_mini_course(self, mc_id: int, ts_id: int, participant_user_id: int) -> Tuple[bool, str]:
+        """Админ принудительно записывает участника на мини-курс"""
+        p = self.get_participant_by_user_id(participant_user_id)
+        if not p:
+            return False, "Участник не найден"
+
+        mc = self.get_mini_course(mc_id)
+        if not mc:
+            return False, "Курс не найден"
+
+        slot = self.get_time_slot(ts_id)
+        if not slot:
+            return False, "Временной слот не найден"
+
+        with self._get_conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                already = conn.execute(
+                    "SELECT 1 FROM mini_course_registrations WHERE mini_course_id=? AND participant_id=?",
+                    (mc_id, p['id'])
+                ).fetchone()
+                if already:
+                    return False, "Участник уже записан на этот курс"
+
+                slot_max = slot['max_participants'] if slot['max_participants'] > 0 else mc['max_participants']
+                current = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM mini_course_registrations WHERE time_slot_id=?",
+                    (ts_id,)
+                ).fetchone()['cnt']
+                if current >= slot_max:
+                    return False, "Нет свободных мест на этот временной слот"
+
+                conn.execute(
+                    "INSERT INTO mini_course_registrations (mini_course_id, participant_id, time_slot_id) VALUES (?, ?, ?)",
+                    (mc_id, p['id'], ts_id)
+                )
+                conn.commit()
+                return True, f"{p['last_name']} {p['first_name']} записан на '{mc['name']}' ({slot['time']})"
+            except Exception as e:
+                conn.rollback()
+                raise e
+
+    def admin_unregister_participant_from_event(self, event_id: int, participant_user_id: int) -> Tuple[bool, str]:
+        """Админ удаляет участника с мероприятия"""
+        with self._get_conn() as conn:
+            p = conn.execute("SELECT id, last_name, first_name FROM participants WHERE user_id=?", (participant_user_id,)).fetchone()
+            if not p:
+                return False, "Участник не найден"
+
+            my_reg = conn.execute(
+                "SELECT * FROM event_registrations WHERE event_id=? AND participant_id=?",
+                (event_id, p['id'])
+            ).fetchone()
+            if not my_reg:
+                return False, "Участник не состоит в команде на этом мероприятии"
+
+            captain_id = my_reg['captain_id']
+            if captain_id == p['id']:
+                # Капитан — удаляем всю команду
+                conn.execute(
+                    "DELETE FROM event_registrations WHERE event_id=? AND captain_id=?",
+                    (event_id, captain_id)
+                )
+                return True, f"Команда капитана {p['last_name']} {p['first_name']} распущена"
+            else:
+                # Обычный участник — убираем из team_members капитана
+                cap_reg = conn.execute(
+                    "SELECT team_members FROM event_registrations WHERE event_id=? AND participant_id=?",
+                    (event_id, captain_id)
+                ).fetchone()
+                if cap_reg:
+                    members = [m.strip() for m in (cap_reg['team_members'] or '').split(',') if m.strip()]
+                    leaver_name = f"{p['last_name']} {p['first_name']}"
+                    members = [m for m in members if m != leaver_name]
+                    conn.execute(
+                        "UPDATE event_registrations SET team_members=? WHERE event_id=? AND participant_id=?",
+                        (", ".join(members), event_id, captain_id)
+                    )
+                conn.execute(
+                    "DELETE FROM event_registrations WHERE event_id=? AND participant_id=?",
+                    (event_id, p['id'])
+                )
+                return True, f"{p['last_name']} {p['first_name']} удалён с мероприятия"
+
+    def admin_unregister_participant_from_mini_course(self, mc_id: int, participant_user_id: int) -> Tuple[bool, str]:
+        """Админ удаляет участника с мини-курса"""
+        p = self.get_participant_by_user_id(participant_user_id)
+        if not p:
+            return False, "Участник не найден"
+
+        mc = self.get_mini_course(mc_id)
+        if not mc:
+            return False, "Курс не найден"
+
+        with self._get_conn() as conn:
+            reg = conn.execute(
+                "SELECT 1 FROM mini_course_registrations WHERE mini_course_id=? AND participant_id=?",
+                (mc_id, p['id'])
+            ).fetchone()
+            if not reg:
+                return False, "Участник не записан на этот курс"
+
+            conn.execute(
+                "DELETE FROM mini_course_registrations WHERE mini_course_id=? AND participant_id=?",
+                (mc_id, p['id'])
+            )
+            return True, f"{p['last_name']} {p['first_name']} удалён с курса '{mc['name']}'"
 
     def get_all_participants_with_registrations(self, event_id: int) -> List[Dict]:
         """Все участники мероприятия с информацией о команде (для админа)"""

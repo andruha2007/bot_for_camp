@@ -79,8 +79,8 @@ class CampBot:
     def team_selection_kb(self, ctx: Dict) -> Keyboard:
         kb = Keyboard(inline=True)
         page = ctx.get("page", 0)
-        users = ctx["users"]
-        selected = ctx["selected"]
+        users = ctx.get("users", [])
+        selected = ctx.get("selected", [])
         per_page = 4
         start, end = page * per_page, (page + 1) * per_page
 
@@ -123,8 +123,8 @@ class CampBot:
     def balance_selection_kb(self, ctx: Dict) -> Keyboard:
         kb = Keyboard(inline=True)
         page = ctx.get("page", 0)
-        participants = ctx["participants"]
-        selected = ctx["selected"]
+        participants = ctx.get("participants", [])
+        selected = ctx.get("selected", [])
         per_page = 4
         start, end = page * per_page, (page + 1) * per_page
 
@@ -164,6 +164,122 @@ class CampBot:
         action_text = "пополнения" if mode == "topup" else "списания"
         selected_count = len(ctx.get("selected", []))
         return f"Выберите участников для {action_text} баланса:\n✅ Выбрано: {selected_count}\n\nНажимайте на участников, чтобы добавить/убрать:"
+
+    # === Клавиатуры для админа (запись участников) ===
+    def admin_participant_kb(self, participants, page=0, action_prefix="admin_reg_event_pick", page_target=""):
+        kb = Keyboard(inline=True)
+        per_page = 3
+        start, end = page * per_page, (page + 1) * per_page
+
+        for p in participants[start:end]:
+            label = f"{p['last_name']} {p['first_name']}"
+            kb.add_callback_button(
+                label[:40], color="primary",
+                payload=json.dumps({"action": action_prefix, "pid": p['id'], "page": page})
+            )
+            kb.add_line()
+
+        nav_target = page_target or action_prefix
+        has_prev = page > 0
+        has_next = end < len(participants)
+        if has_prev or has_next:
+            if has_prev:
+                kb.add_callback_button("⬅️", color="secondary", payload=json.dumps({"action": "admin_part_page", "page": page - 1, "target": nav_target, "prefix": action_prefix}))
+            if has_next:
+                kb.add_callback_button("➡️", color="secondary", payload=json.dumps({"action": "admin_part_page", "page": page + 1, "target": nav_target, "prefix": action_prefix}))
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": nav_target}))
+        return kb
+
+    def admin_event_selection_kb(self, events, pid):
+        kb = Keyboard(inline=True)
+        max_show = min(len(events), 5)
+        for i in range(max_show):
+            ev = events[i]
+            label = ev['name']
+            if ev.get('is_closed'):
+                label = f"🔒 {label}"
+            kb.add_callback_button(
+                label[:40], color="secondary" if ev.get('is_closed') else "primary",
+                payload=json.dumps({"action": "admin_reg_event_do", "pid": pid, "event_id": ev['id']})
+            )
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_reg_event"}))
+        return kb
+
+    def admin_mc_selection_kb(self, courses, pid):
+        kb = Keyboard(inline=True)
+        max_show = min(len(courses), 5)
+        for i in range(max_show):
+            mc = courses[i]
+            label = mc['name']
+            if mc.get('is_closed'):
+                label = f"🔒 {label}"
+            kb.add_callback_button(
+                label[:40], color="secondary" if mc.get('is_closed') else "primary",
+                payload=json.dumps({"action": "admin_reg_mc_show_slots", "pid": pid, "mc_id": mc['id']})
+            )
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_reg_mc"}))
+        return kb
+
+    def admin_mc_slot_selection_kb(self, mc, pid):
+        kb = Keyboard(inline=True)
+        slots = self.db.get_time_slots(mc['id'])
+        max_show = min(len(slots), 5)
+        for i in range(max_show):
+            slot = slots[i]
+            slot_max = slot['max_participants'] if slot['max_participants'] > 0 else mc['max_participants']
+            cnt = self.db.get_mini_course_registrations(mc['id'])
+            reg_count = sum(1 for r in cnt if r.get('time_slot_id') == slot['id'])
+            free = slot_max - reg_count
+            label = f"{slot['time']} (ост. {free}/{slot_max})"
+            color = "secondary" if free <= 0 else "primary"
+            kb.add_callback_button(
+                label, color=color,
+                payload=json.dumps({"action": "admin_reg_mc_do", "pid": pid, "mc_id": mc['id'], "ts_id": slot['id']})
+            )
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_reg_mc_show_courses", "pid": pid}))
+        return kb
+
+    def admin_remove_event_kb(self, registrations, pid):
+        """Показывает регистрации участника на мероприятия для удаления"""
+        kb = Keyboard(inline=True)
+        max_show = min(len(registrations), 5)
+        for i in range(max_show):
+            reg = registrations[i]
+            ev = self.db.get_event(reg['event_id'])
+            if not ev:
+                continue
+            is_captain = reg.get('captain_id') == reg['participant_id']
+            label = f"{'👑' if is_captain else '👤'} {ev['name']}"
+            kb.add_callback_button(
+                label[:40], color="negative",
+                payload=json.dumps({"action": "admin_unreg_event_do", "pid": pid, "event_id": ev['id']})
+            )
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_remove_from_event"}))
+        return kb
+
+    def admin_remove_mc_kb(self, registrations, pid):
+        """Показывает регистрации участника на мини-курсы для удаления"""
+        kb = Keyboard(inline=True)
+        max_show = min(len(registrations), 5)
+        for i in range(max_show):
+            reg = registrations[i]
+            mc = self.db.get_mini_course(reg['mini_course_id'])
+            if not mc:
+                continue
+            slot = self.db.get_time_slot(reg['time_slot_id'])
+            time_str = f" ({slot['time']})" if slot else ""
+            kb.add_callback_button(
+                f"{mc['name']}{time_str}"[:40], color="negative",
+                payload=json.dumps({"action": "admin_unreg_mc_do", "pid": pid, "mc_id": mc['id']})
+            )
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_remove_from_mc"}))
+        return kb
 
     # === Клавиатуры для ярмарки ===
     def _fair_participant_kb(self) -> Keyboard:
@@ -549,6 +665,256 @@ class CampBot:
                 else:
                     self.bot.send_message(uid, "Это мероприятие уже опубликовано или не найдено.", keyboard=self.main_kb(role))
 
+            # === Админ: запись/удаление участников ===
+            elif action == "admin_part_page":
+                if role not in ("admin", "super_admin"):
+                    return
+                page = payload["page"]
+                target = payload.get("target", "")
+                prefix = payload.get("prefix", "admin_reg_event_pick")
+                participants = self.db.get_all_participants()
+                text_map = {
+                    "admin_reg_event": "Выберите участника для регистрации на мероприятие:",
+                    "admin_remove_from_event": "Выберите участника для удаления с мероприятия:",
+                    "admin_reg_mc": "Выберите участника для записи на мини-курс:",
+                    "admin_remove_from_mc": "Выберите участника для удаления с мини-курса:",
+                }
+                text = text_map.get(target, "Выберите участника:")
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": text,
+                    "keyboard": self.admin_participant_kb(participants, page, prefix, target).get_keyboard()
+                })
+
+            elif action in ("admin_reg_event", "admin_reg_mc", "admin_remove_from_event", "admin_remove_from_mc"):
+                if role not in ("admin", "super_admin"):
+                    return
+                participants = self.db.get_all_participants()
+                text_map = {
+                    "admin_reg_event": "Выберите участника для регистрации на мероприятие:",
+                    "admin_remove_from_event": "Выберите участника для удаления с мероприятия:",
+                    "admin_reg_mc": "Выберите участника для записи на мини-курс:",
+                    "admin_remove_from_mc": "Выберите участника для удаления с мини-курса:",
+                }
+                prefix_map = {
+                    "admin_reg_event": "admin_reg_event_pick",
+                    "admin_remove_from_event": "admin_unreg_event_pick",
+                    "admin_reg_mc": "admin_reg_mc_pick_part",
+                    "admin_remove_from_mc": "admin_unreg_mc_pick",
+                }
+                text = text_map.get(action, "Выберите участника:")
+                prefix = prefix_map.get(action, "admin_reg_event_pick")
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": text,
+                    "keyboard": self.admin_participant_kb(participants, 0, prefix, action).get_keyboard()
+                })
+
+            elif action == "admin_reg_event_pick":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                events = self.db.get_open_or_last_closed_events()
+                if not events:
+                    return self.bot.send_message(uid, "Нет доступных мероприятий.", keyboard=self.main_kb(role))
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": f"Выберите мероприятие для {p['last_name']} {p['first_name']}:",
+                    "keyboard": self.admin_event_selection_kb(events, pid).get_keyboard()
+                })
+
+            elif action == "admin_reg_event_do":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                event_id = payload["event_id"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                ev = self.db.get_event(event_id)
+                if not ev:
+                    return self.bot.send_message(uid, "Мероприятие не найдено.", keyboard=self.main_kb(role))
+                ok, msg, captain_uid = self.db.admin_register_participant_for_event(event_id, p['user_id'])
+                if ok:
+                    # Уведомить участника
+                    try:
+                        part_role = 'participant'
+                        self.bot.send_message(
+                            p['user_id'],
+                            f"✅ Вы зарегистрированы на мероприятие «{ev['name']}» администратором."
+                        )
+                    except Exception:
+                        pass
+                    self.bot.send_message(uid, f"✅ {msg}", keyboard=self.main_kb(role))
+                else:
+                    self.bot.send_message(uid, f"❌ {msg}", keyboard=self.main_kb(role))
+
+            elif action == "admin_unreg_event_pick":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                rows = self.db.get_participant_event_registrations(pid)
+                if not rows:
+                    return self.bot.send_message(uid, "Участник не зарегистрирован ни на одно мероприятие.", keyboard=self.main_kb(role))
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": f"Выберите мероприятие для удаления {p['last_name']} {p['first_name']}:",
+                    "keyboard": self.admin_remove_event_kb(rows, pid).get_keyboard()
+                })
+
+            elif action == "admin_unreg_event_do":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                event_id = payload["event_id"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                ev = self.db.get_event(event_id)
+                ev_name = ev['name'] if ev else "?"
+                ok, msg = self.db.admin_unregister_participant_from_event(event_id, p['user_id'])
+                if ok:
+                    try:
+                        self.bot.send_message(
+                            p['user_id'],
+                            f"⚠️ Вы удалены с мероприятия «{ev_name}» администратором."
+                        )
+                    except Exception:
+                        pass
+                    self.bot.send_message(uid, f"✅ {msg}", keyboard=self.main_kb(role))
+                else:
+                    self.bot.send_message(uid, f"❌ {msg}", keyboard=self.main_kb(role))
+
+            elif action == "admin_reg_mc_pick_part":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                courses = self.db.get_open_or_last_closed_mini_courses()
+                if not courses:
+                    return self.bot.send_message(uid, "Нет доступных мини-курсов.", keyboard=self.main_kb(role))
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": f"Выберите мини-курс для {p['last_name']} {p['first_name']}:",
+                    "keyboard": self.admin_mc_selection_kb(courses, pid).get_keyboard()
+                })
+
+            elif action == "admin_reg_mc_show_slots":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                mc_id = payload["mc_id"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                mc = self.db.get_mini_course(mc_id)
+                if not mc:
+                    return self.bot.send_message(uid, "Курс не найден.", keyboard=self.main_kb(role))
+                date_str = f" ({mc['date']})" if mc.get('date') else ""
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": f"Выберите время для {p['last_name']} {p['first_name']} на курс «{mc['name']}»{date_str}:",
+                    "keyboard": self.admin_mc_slot_selection_kb(mc, pid).get_keyboard()
+                })
+
+            elif action == "admin_reg_mc_show_courses":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                courses = self.db.get_open_or_last_closed_mini_courses()
+                if not courses:
+                    return self.bot.send_message(uid, "Нет доступных мини-курсов.", keyboard=self.main_kb(role))
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": f"Выберите мини-курс для {p['last_name']} {p['first_name']}:",
+                    "keyboard": self.admin_mc_selection_kb(courses, pid).get_keyboard()
+                })
+
+            elif action == "admin_reg_mc_do":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                mc_id = payload["mc_id"]
+                ts_id = payload["ts_id"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                mc = self.db.get_mini_course(mc_id)
+                if not mc:
+                    return self.bot.send_message(uid, "Курс не найден.", keyboard=self.main_kb(role))
+                ok, msg = self.db.admin_register_participant_for_mini_course(mc_id, ts_id, p['user_id'])
+                if ok:
+                    try:
+                        slot = self.db.get_time_slot(ts_id)
+                        time_str = f" ({slot['time']})" if slot else ""
+                        self.bot.send_message(
+                            p['user_id'],
+                            f"✅ Вы записаны на мини-курс «{mc['name']}»{time_str} администратором."
+                        )
+                    except Exception:
+                        pass
+                    self.bot.send_message(uid, f"✅ {msg}", keyboard=self.main_kb(role))
+                else:
+                    self.bot.send_message(uid, f"❌ {msg}", keyboard=self.main_kb(role))
+
+            elif action == "admin_unreg_mc_pick":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                rows = self.db.get_participant_mini_course_registrations(pid)
+                if not rows:
+                    return self.bot.send_message(uid, "Участник не записан ни на один мини-курс.", keyboard=self.main_kb(role))
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": f"Выберите мини-курс для удаления {p['last_name']} {p['first_name']}:",
+                    "keyboard": self.admin_remove_mc_kb(rows, pid).get_keyboard()
+                })
+
+            elif action == "admin_unreg_mc_do":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                mc_id = payload["mc_id"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                mc = self.db.get_mini_course(mc_id)
+                mc_name = mc['name'] if mc else "?"
+                ok, msg = self.db.admin_unregister_participant_from_mini_course(mc_id, p['user_id'])
+                if ok:
+                    try:
+                        self.bot.send_message(
+                            p['user_id'],
+                            f"⚠️ Вы удалены с мини-курса «{mc_name}» администратором."
+                        )
+                    except Exception:
+                        pass
+                    self.bot.send_message(uid, f"✅ {msg}", keyboard=self.main_kb(role))
+                else:
+                    self.bot.send_message(uid, f"❌ {msg}", keyboard=self.main_kb(role))
+
             # === Закрытие регистрации ===
             elif action == "confirm_close_event":
                 if role not in ("admin", "super_admin"):
@@ -558,6 +924,7 @@ class CampBot:
                     return self.bot.send_message(uid, "Нет опубликованных мероприятий.", keyboard=self.main_kb(role))
                 total_distributed = 0
                 all_assignments = []
+                all_registered_participants = []
                 for ev in events:
                     result = self.db.close_event_registration_and_distribute(ev['id'])
                     if result:
@@ -565,24 +932,46 @@ class CampBot:
                         assigned = result.get('new_assignments', [])
                         for a in assigned:
                             all_assignments.append((ev['name'], a))
+                    # Собираем ВСЕХ зарегистрированных участников
+                    ev_regs = self.db.get_event_teams_list(ev['id'])
+                    for reg in ev_regs:
+                        all_registered_participants.append((ev['name'], ev['id'], reg))
                 msg_parts = ["✅ Регистрация на мероприятия закрыта."]
+
+                # Уведомляем каждого зарегистрированного участника
+                notified = set()
+                for ev_name, ev_id, reg in all_registered_participants:
+                    p_info = self.db.get_participant_by_id(reg['participant_id'])
+                    if p_info and p_info['user_id']:
+                        key = (ev_id, p_info['user_id'])
+                        if key not in notified:
+                            notified.add(key)
+                            team_info = self.db.get_team_info_for_event(ev_id, p_info['user_id'])
+                            if team_info:
+                                try:
+                                    self.bot.send_message(
+                                        p_info['user_id'],
+                                        f"📅 Мероприятие «{ev_name}» завершено.\n"
+                                        f"👥 Ваша команда: {team_info['captain_name']}\n"
+                                        f"👤 Участников: {team_info['team_size']}"
+                                    )
+                                except Exception:
+                                    pass
+                            else:
+                                try:
+                                    self.bot.send_message(
+                                        p_info['user_id'],
+                                        f"📅 Мероприятие «{ev_name}» завершено. Регистрация закрыта."
+                                    )
+                                except Exception:
+                                    pass
+
                 if all_assignments:
                     parts = []
                     for ev_name, a in all_assignments:
                         name = f"{a.get('first_name', '')} {a.get('last_name', '')}".strip()
                         team = a.get('captain_name', '')
                         parts.append(f"   {name} → команда «{team}»")
-                    # Уведомляем каждого участника
-                    for ev_name, a in all_assignments:
-                        uid_ = a.get('user_id')
-                        if uid_:
-                            try:
-                                self.bot.send_message(
-                                    uid_,
-                                    f"✅ Вы распределены в команду «{a.get('captain_name', '')}» на мероприятии «{ev_name}»."
-                                )
-                            except Exception:
-                                pass
                     msg_parts.append(f"Распределено участников: {len(all_assignments)}")
                     msg_parts.append("\n📋 Отчёт по распределению:")
                     msg_parts.extend(parts)
@@ -598,6 +987,24 @@ class CampBot:
                     return self.bot.send_message(uid, "Нет опубликованных мини-курсов.", keyboard=self.main_kb(role))
                 msg_parts = ["✅ Регистрация на мини-курсы закрыта."]
                 assignments = result.get('new_assignments', [])
+
+                # Уведомляем ВСЕХ зарегистрированных участников
+                all_courses = result.get('courses', [])
+                for course in all_courses:
+                    regs = self.db.get_mini_course_full_registrations(course['id'])
+                    for reg in regs:
+                        p_info = self.db.get_participant_by_id(reg['participant_id'])
+                        if p_info and p_info['user_id']:
+                            try:
+                                self.bot.send_message(
+                                    p_info['user_id'],
+                                    f"📚 Мини-курс «{course['name']}» завершён.\n"
+                                    f"⏰ Ваше время: {reg.get('slot_time', '')}\n"
+                                    f"Регистрация закрыта."
+                                )
+                            except Exception:
+                                pass
+
                 if assignments:
                     parts = []
                     for a in assignments:
@@ -605,18 +1012,6 @@ class CampBot:
                         regs = a.get('registrations', [])
                         for r in regs:
                             parts.append(f"   {name} → {r.get('course_name', '')} ({r.get('slot_time', '')})")
-                    for a in assignments:
-                        uid_ = a.get('user_id')
-                        if uid_:
-                            regs = a.get('registrations', [])
-                            for r in regs:
-                                try:
-                                    self.bot.send_message(
-                                        uid_,
-                                        f"✅ Вы распределены на мини-курс «{r.get('course_name', '')}» ({r.get('slot_time', '')})."
-                                    )
-                                except Exception:
-                                    pass
                     msg_parts.append(f"Распределено участников: {len(assignments)}")
                     msg_parts.append("\n📋 Отчёт по распределению:")
                     msg_parts.extend(parts)
@@ -645,6 +1040,10 @@ class CampBot:
                 kb.add_line()
                 kb.add_button("Последнее закрытое", payload=json.dumps({"cmd": "last_closed_event"}))
                 kb.add_line()
+                kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_event"}))
+                kb.add_line()
+                kb.add_button("Удалить с мероприятия", color="negative", payload=json.dumps({"cmd": "admin_remove_from_event"}))
+                kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
                 self.bot.send_message(uid, "Меню мероприятий:", keyboard=kb)
 
@@ -666,6 +1065,10 @@ class CampBot:
                 kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_mini_course"}))
                 kb.add_line()
                 kb.add_button("Последние закрытые", payload=json.dumps({"cmd": "last_closed_mini_courses"}))
+                kb.add_line()
+                kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_mc"}))
+                kb.add_line()
+                kb.add_button("Удалить с мини-курса", color="negative", payload=json.dumps({"cmd": "admin_remove_from_mc"}))
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
                 self.bot.send_message(uid, "Меню мини-курсов:", keyboard=kb)
@@ -991,6 +1394,10 @@ class CampBot:
 
         except Exception as e:
             logger.error("Callback error: %s", e, exc_info=True)
+            try:
+                self.bot.send_message(uid, "⚠️ Произошла ошибка. Попробуйте снова.")
+            except Exception:
+                pass
 
     # === Маппинг текста в команды ===
     @staticmethod
@@ -1140,6 +1547,10 @@ class CampBot:
                 kb.add_line()
                 kb.add_button("Последнее закрытое", payload=json.dumps({"cmd": "last_closed_event"}))
                 kb.add_line()
+                kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_event"}))
+                kb.add_line()
+                kb.add_button("Удалить с мероприятия", color="negative", payload=json.dumps({"cmd": "admin_remove_from_event"}))
+                kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
                 self.bot.send_message(uid, "Меню мероприятий:", keyboard=kb)
 
@@ -1159,6 +1570,10 @@ class CampBot:
                 kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_mini_course"}))
                 kb.add_line()
                 kb.add_button("Последние закрытые", payload=json.dumps({"cmd": "last_closed_mini_courses"}))
+                kb.add_line()
+                kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_mc"}))
+                kb.add_line()
+                kb.add_button("Удалить с мини-курса", color="negative", payload=json.dumps({"cmd": "admin_remove_from_mc"}))
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
                 self.bot.send_message(uid, "Меню мини-курсов:", keyboard=kb)
@@ -1210,6 +1625,46 @@ class CampBot:
                         lines.append(f"   👤 {r['first_name']} {r['last_name']} — {r.get('time_slot_label', '')}")
                     lines.append("")
                 self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "admin_reg_event":
+                participants = self.db.get_all_participants()
+                if not participants:
+                    return self.bot.send_message(uid, "Нет участников.", keyboard=self.main_kb(role))
+                self.bot.send_message(
+                    uid,
+                    "Выберите участника для регистрации на мероприятие:",
+                    keyboard=self.admin_participant_kb(participants, 0, "admin_reg_event_pick", "admin_reg_event")
+                )
+
+            elif cmd == "admin_remove_from_event":
+                participants = self.db.get_all_participants()
+                if not participants:
+                    return self.bot.send_message(uid, "Нет участников.", keyboard=self.main_kb(role))
+                self.bot.send_message(
+                    uid,
+                    "Выберите участника для удаления с мероприятия:",
+                    keyboard=self.admin_participant_kb(participants, 0, "admin_unreg_event_pick", "admin_remove_from_event")
+                )
+
+            elif cmd == "admin_reg_mc":
+                participants = self.db.get_all_participants()
+                if not participants:
+                    return self.bot.send_message(uid, "Нет участников.", keyboard=self.main_kb(role))
+                self.bot.send_message(
+                    uid,
+                    "Выберите участника для записи на мини-курс:",
+                    keyboard=self.admin_participant_kb(participants, 0, "admin_reg_mc_pick_part", "admin_reg_mc")
+                )
+
+            elif cmd == "admin_remove_from_mc":
+                participants = self.db.get_all_participants()
+                if not participants:
+                    return self.bot.send_message(uid, "Нет участников.", keyboard=self.main_kb(role))
+                self.bot.send_message(
+                    uid,
+                    "Выберите участника для удаления с мини-курса:",
+                    keyboard=self.admin_participant_kb(participants, 0, "admin_unreg_mc_pick", "admin_remove_from_mc")
+                )
 
             elif cmd == "complaints":
                 complaints = self.db.get_recent_complaints()

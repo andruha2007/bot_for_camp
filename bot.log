@@ -1094,3 +1094,45 @@ UnboundLocalError: cannot access local variable 'json' where it is not associate
 2026-06-22 15:22:23,419 [INFO] __main__: ✅ База данных подключена
 2026-06-22 15:22:24,079 [INFO] bot_logic: Admin sync complete
 2026-06-22 15:22:24,082 [INFO] __main__: 🚀 Бот успешно запущен!
+2026-06-22 15:31:21,540 [INFO] __main__: ✅ База данных подключена
+2026-06-22 15:31:22,345 [INFO] bot_logic: Admin sync complete
+2026-06-22 15:31:22,346 [INFO] __main__: 🚀 Бот успешно запущен!
+2026-06-22 15:50:47,607 [INFO] __main__: ✅ База данных подключена
+2026-06-22 15:50:50,434 [INFO] bot_logic: Admin sync complete
+2026-06-22 15:50:50,436 [INFO] __main__: 🚀 Бот успешно запущен!
+2026-06-22 15:51:06,314 [ERROR] bot_logic: Msg error: [911] Keyboard format is invalid: row 1 contains too much columns
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 374, in handle_message
+    self.route_command(uid, role, cmd, p)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1607, in route_command
+    self.bot.send_message(
+    ~~~~~~~~~~~~~~~~~~~~~^
+        uid,
+        ^^^^
+        "Выберите участника для записи на мини-курс:",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        keyboard=self.admin_participant_kb(participants, 0, "admin_reg_mc_pick_part", "admin_reg_mc")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 274, in send_message
+    self.send_api_method("messages.send", data)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 245, in send_api_method
+    response = self.vk_session.method(method, payload)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 934, in method
+    raise error
+vk_api.exceptions.ApiError: [911] Keyboard format is invalid: row 1 contains too much columns
+2026-06-22 16:08:47,651 [INFO] __main__: ✅ База данных подключена
+2026-06-22 16:08:48,305 [INFO] bot_logic: Admin sync complete
+2026-06-22 16:08:48,306 [INFO] __main__: 🚀 Бот успешно запущен!
+2026-06-22 16:15:36,135 [INFO] __main__: ✅ База данных подключена
+2026-06-22 16:15:36,999 [INFO] bot_logic: Admin sync complete
+2026-06-22 16:15:37,003 [INFO] __main__: 🚀 Бот успешно запущен!
+2026-06-22 16:16:24,034 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-22 16:16:24,897 [INFO] bot_logic: Admin sync complete
+2026-06-22 16:16:24,901 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-22 16:20:20,451 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-22 16:20:21,232 [INFO] bot_logic: Admin sync complete
+2026-06-22 16:20:21,234 [INFO] __main__: Bot uspeshno zapushchen!
