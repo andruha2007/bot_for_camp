@@ -1,5 +1,7 @@
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional
 from pyvkbot import Bot, Keyboard
 from database import DatabaseManager
@@ -12,6 +14,8 @@ class CampBot:
         self.bot = bot
         self.db = db
         self.states: Dict[int, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=20)
         self._sync_admins()
         self._register_handlers()
 
@@ -37,10 +41,16 @@ class CampBot:
 
     # === Управление состояниями FSM ===
     def _set_state(self, uid: int, state: str, ctx: Optional[Dict] = None):
-        self.states[uid] = {"state": state, "ctx": ctx or {}}
+        with self._lock:
+            self.states[uid] = {"state": state, "ctx": ctx or {}}
 
     def _clear_state(self, uid: int):
-        self.states.pop(uid, None)
+        with self._lock:
+            self.states.pop(uid, None)
+
+    def _get_state(self, uid: int) -> Dict[str, Any]:
+        with self._lock:
+            return self.states.get(uid, {"state": "MAIN", "ctx": {}}).copy()
 
     # === Генерация клавиатуры ===
     def main_kb(self, role: str) -> Keyboard:
@@ -131,7 +141,7 @@ class CampBot:
         for p in participants[start:end]:
             is_sel = p['id'] in selected
             emoji = "✅" if is_sel else "⬜"
-            label = f"{emoji} {p['last_name']} {p['first_name']} ({p.get('balance', 0)} баллов)"
+            label = f"{emoji} {p['last_name']} {p['first_name']} ({p.get('balance', 0)} HSE-коинов)"
             color = "positive" if is_sel else "secondary"
             kb.add_callback_button(
                 label[:40],
@@ -262,6 +272,25 @@ class CampBot:
         kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_remove_from_event"}))
         return kb
 
+    def _admin_create_team_event_kb(self, events, page):
+        kb = Keyboard(inline=True)
+        per_page = 5
+        start, end = page * per_page, (page + 1) * per_page
+        for ev in events[start:end]:
+            kb.add_callback_button(ev['name'][:40], color="primary",
+                payload=json.dumps({"action": "admin_create_team_pick_event", "event_id": ev['id']}))
+            kb.add_line()
+        has_prev = page > 0
+        has_next = end < len(events)
+        if has_prev:
+            kb.add_callback_button("⬅️", color="secondary", payload=json.dumps({"action": "admin_create_team_page", "page": page - 1}))
+        if has_next:
+            kb.add_callback_button("➡️", color="secondary", payload=json.dumps({"action": "admin_create_team_page", "page": page + 1}))
+        if has_prev or has_next:
+            kb.add_line()
+        kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "show_admin_events"}))
+        return kb
+
     def admin_remove_mc_kb(self, registrations, pid):
         """Показывает регистрации участника на мини-курсы для удаления"""
         kb = Keyboard(inline=True)
@@ -360,6 +389,9 @@ class CampBot:
 
     # === Главный обработчик сообщений ===
     def handle_message(self, message):
+        self._executor.submit(self._handle_message_safe, message)
+
+    def _handle_message_safe(self, message):
         try:
             uid, text, payload_str = self._extract_message_data(message)
             if not uid or uid < 0:
@@ -370,7 +402,7 @@ class CampBot:
 
             p = self.db.get_participant_by_user_id(uid)
             role = p.get("role") if p else "unregistered"
-            state_data = self.states.get(uid, {"state": "MAIN", "ctx": {}})
+            state_data = self._get_state(uid)
             state, ctx = state_data["state"], state_data["ctx"]
 
             # 1. Глобальные Назад/Отмена — перехватываем ДО всего
@@ -393,9 +425,18 @@ class CampBot:
 
         except Exception as e:
             logger.error("Msg error: %s", e, exc_info=True)
+            try:
+                uid, _, _ = self._extract_message_data(message)
+                if uid and uid > 0:
+                    self.bot.send_message(uid, "⚠️ Произошла внутренняя ошибка. Попробуйте ещё раз.")
+            except Exception:
+                pass
 
     # === Обработчик callback-кнопок (галочки, навигация) ===
     def handle_callback(self, event):
+        self._executor.submit(self._handle_callback_safe, event)
+
+    def _handle_callback_safe(self, event):
         try:
             uid, peer_id, cmid, payload_str = self._extract_callback_data(event)
             if not uid:
@@ -438,7 +479,13 @@ class CampBot:
 
             elif action == "submit_team":
                 ctx = self.states.get(uid, {}).get("ctx", {})
-                ok, msg, errors = self.db.register_team_for_event(ctx.get("target_id"), uid, ctx.get("selected", []))
+                selected = ctx.get("selected", [])
+                if not selected:
+                    return self.bot.send_message(uid, "❌ Выберите хотя бы одного участника.", keyboard=self.team_selection_kb(ctx))
+                captain_uid = ctx.get("captain_uid", selected[0])
+                if captain_uid not in selected:
+                    captain_uid = selected[0]
+                ok, msg, errors = self.db.register_team_for_event(ctx.get("target_id"), captain_uid, selected)
                 if ok:
                     self._clear_state(uid)
                     self.bot.send_message(uid, f"🎉 {msg}", keyboard=self.main_kb(role))
@@ -462,6 +509,34 @@ class CampBot:
             elif action == "disband_team":
                 ok, msg = self.db.disband_event_team(payload["event_id"], uid)
                 self.bot.send_message(uid, msg, keyboard=self.main_kb(role))
+
+            elif action == "admin_create_team_page":
+                ctx = self.states.get(uid, {}).get("ctx", {})
+                page = payload["page"]
+                ctx["page"] = page
+                self.states[uid]["ctx"] = ctx
+                events = ctx.get("events", [])
+                self.bot.send_api_method("messages.edit", {
+                    "peer_id": peer_id,
+                    "conversation_message_id": cmid,
+                    "message": "Выберите мероприятие для создания команды:",
+                    "keyboard": self._admin_create_team_event_kb(events, page).get_keyboard()
+                })
+
+            elif action == "admin_create_team_pick_event":
+                event_id = payload["event_id"]
+                free_participants = self.db.get_unregistered_participants_for_event(event_id, 0)
+                if not free_participants:
+                    return self.bot.send_message(uid, "Нет свободных участников для этого мероприятия.", keyboard=self.main_kb(role))
+                self._set_state(uid, "SELECTING_TEAM", {
+                    "target": "event",
+                    "target_id": event_id,
+                    "users": free_participants,
+                    "selected": [],
+                    "page": 0
+                })
+                ctx2 = self.states[uid]["ctx"]
+                self.bot.send_message(uid, "Выберите участников команды.\n👑 Первый выбранный станет капитаном:\n" + self.team_selection_text(ctx2), keyboard=self.team_selection_kb(ctx2))
 
             elif action == "show_my_team":
                 event_id = payload.get("event_id")
@@ -1024,24 +1099,21 @@ class CampBot:
                     return
                 kb = Keyboard(one_time=False, inline=False)
                 kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_event"}))
-                kb.add_line()
                 kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_events"}))
                 kb.add_line()
                 if self.db.has_open_registrations():
                     kb.add_button("Закрыть регистрацию", color="negative", payload=json.dumps({"cmd": "close_event_reg"}))
                     kb.add_line()
                 kb.add_button("Список", payload=json.dumps({"cmd": "view_events"}))
-                kb.add_line()
                 kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished_events"}))
                 kb.add_line()
                 kb.add_button("Команды", payload=json.dumps({"cmd": "view_event_teams"}))
+                kb.add_button("Создать команду", color="primary", payload=json.dumps({"cmd": "admin_create_team"}))
                 kb.add_line()
                 kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_event"}))
-                kb.add_line()
                 kb.add_button("Последнее закрытое", payload=json.dumps({"cmd": "last_closed_event"}))
                 kb.add_line()
                 kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_event"}))
-                kb.add_line()
                 kb.add_button("Удалить с мероприятия", color="negative", payload=json.dumps({"cmd": "admin_remove_from_event"}))
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
@@ -1052,22 +1124,18 @@ class CampBot:
                     return
                 kb = Keyboard(one_time=False, inline=False)
                 kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_mini_course"}))
-                kb.add_line()
                 kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_mini_courses"}))
                 kb.add_line()
                 if self.db.has_open_registrations():
                     kb.add_button("Закрыть регистрацию", color="negative", payload=json.dumps({"cmd": "close_mini_course_reg"}))
                     kb.add_line()
                 kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished"}))
-                kb.add_line()
                 kb.add_button("Опубликованные", payload=json.dumps({"cmd": "view_published"}))
                 kb.add_line()
                 kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_mini_course"}))
-                kb.add_line()
                 kb.add_button("Последние закрытые", payload=json.dumps({"cmd": "last_closed_mini_courses"}))
                 kb.add_line()
                 kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_mc"}))
-                kb.add_line()
                 kb.add_button("Удалить с мини-курса", color="negative", payload=json.dumps({"cmd": "admin_remove_from_mc"}))
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
@@ -1099,18 +1167,36 @@ class CampBot:
             elif action == "fair_edit_item_form":
                 if self.db.is_fair_paused():
                     return self.bot.send_message(uid, "Ярмарка приостановлена.", keyboard=self.main_kb(role))
+                item = self.db.get_fair_item(payload["item_id"])
+                if not item:
+                    return self.bot.send_message(uid, "Товар не найден.")
+                my_team = self.db.get_fair_team_by_user_id(uid)
+                if not my_team or my_team['id'] != item['team_id']:
+                    return self.bot.send_message(uid, "Этот товар не принадлежит вашей команде.", keyboard=self._fair_participant_kb())
                 self._set_state(uid, "WAIT_FAIR_EDIT_ITEM_NAME", {"item_id": payload["item_id"]})
                 self.bot.send_message(uid, "Введите новое название товара:", keyboard=self.wait_kb())
 
             elif action == "fair_change_price_form":
                 if self.db.is_fair_paused():
                     return self.bot.send_message(uid, "Ярмарка приостановлена.", keyboard=self.main_kb(role))
+                item = self.db.get_fair_item(payload["item_id"])
+                if not item:
+                    return self.bot.send_message(uid, "Товар не найден.")
+                my_team = self.db.get_fair_team_by_user_id(uid)
+                if not my_team or my_team['id'] != item['team_id']:
+                    return self.bot.send_message(uid, "Этот товар не принадлежит вашей команде.", keyboard=self._fair_participant_kb())
                 self._set_state(uid, "WAIT_FAIR_CHANGE_PRICE", {"item_id": payload["item_id"]})
                 self.bot.send_message(uid, "Введите новую цену (целое число):", keyboard=self.wait_kb())
 
             elif action == "fair_delete_item":
                 if self.db.is_fair_paused():
                     return self.bot.send_message(uid, "Ярмарка приостановлена.", keyboard=self.main_kb(role))
+                item = self.db.get_fair_item(payload["item_id"])
+                if not item:
+                    return self.bot.send_message(uid, "Товар не найден.")
+                my_team = self.db.get_fair_team_by_user_id(uid)
+                if not my_team or my_team['id'] != item['team_id']:
+                    return self.bot.send_message(uid, "Этот товар не принадлежит вашей команде.", keyboard=self._fair_participant_kb())
                 self.db.deactivate_fair_item(payload["item_id"])
                 self.bot.send_message(uid, "🗑 Товар удалён.", keyboard=self._fair_participant_kb())
 
@@ -1192,6 +1278,11 @@ class CampBot:
                     return self.bot.send_message(uid, "Ошибка: команда не найдена.", keyboard=self._fair_participant_kb())
                 if buyer_team['budget'] < price:
                     return self.bot.send_message(uid, "❌ Ошибка списания средств: недостаточно монет на счету команды.", keyboard=self._fair_participant_kb())
+                # Check admin availability BEFORE creating transaction
+                event_id = self.db.get_active_fair_event_id()
+                admin_uid = self.db.get_next_fair_admin(event_id) if event_id else None
+                if not admin_uid:
+                    return self.bot.send_message(uid, "❌ Нет доступных администраторов для обработки заявки.", keyboard=self._fair_participant_kb())
                 # Create transaction
                 p = self.db.get_participant_by_user_id(uid)
                 seller_members = self.db.get_fair_team_members(seller_team_id)
@@ -1201,32 +1292,26 @@ class CampBot:
                     uid, seller_uid,
                     f"Покупка {payload.get('item_name', 'товара')} у {payload.get('seller_team_name', 'продавца')}"
                 )
-                # Assign to next available admin
-                event_id = self.db.get_active_fair_event_id()
-                admin_uid = self.db.get_next_fair_admin(event_id) if event_id else None
-                if admin_uid:
-                    self.db.assign_transaction_to_admin(tx_id, admin_uid)
-                    # Send notification to admin
-                    kb = Keyboard(inline=True)
-                    kb.add_callback_button(
-                        "✅ Одобрить", color="positive",
-                        payload=json.dumps({"action": "fair_approve_tx", "transaction_id": tx_id})
-                    )
-                    kb.add_callback_button(
-                        "❌ Отклонить", color="negative",
-                        payload=json.dumps({"action": "fair_reject_tx", "transaction_id": tx_id})
-                    )
-                    self.bot.send_message(admin_uid,
-                        f"📋 Новая заявка на покупку!\n\n"
-                        f"📦 {payload.get('item_name', 'Товар')}\n"
-                        f"💰 Сумма: {price} монет\n"
-                        f"🏪 Покупатель: {buyer_team['team_name']}\n"
-                        f"🏪 Продавец: {payload.get('seller_team_name', 'Продавец')}\n"
-                        f"👤 Покупатель: {p['last_name']} {p['first_name']}",
-                        keyboard=kb)
-                    self.bot.send_message(uid, "✅ Заявка на покупку отправлена администратору. Ожидайте подтверждения.", keyboard=self._fair_participant_kb())
-                else:
-                    self.bot.send_message(uid, "❌ Нет доступных администраторов для обработки заявки.", keyboard=self._fair_participant_kb())
+                self.db.assign_transaction_to_admin(tx_id, admin_uid)
+                # Send notification to admin
+                kb = Keyboard(inline=True)
+                kb.add_callback_button(
+                    "✅ Одобрить", color="positive",
+                    payload=json.dumps({"action": "fair_approve_tx", "transaction_id": tx_id})
+                )
+                kb.add_callback_button(
+                    "❌ Отклонить", color="negative",
+                    payload=json.dumps({"action": "fair_reject_tx", "transaction_id": tx_id})
+                )
+                self.bot.send_message(admin_uid,
+                    f"📋 Новая заявка на покупку!\n\n"
+                    f"📦 {payload.get('item_name', 'Товар')}\n"
+                    f"💰 Сумма: {price} монет\n"
+                    f"🏪 Покупатель: {buyer_team['team_name']}\n"
+                    f"🏪 Продавец: {payload.get('seller_team_name', 'Продавец')}\n"
+                    f"👤 Покупатель: {p['last_name']} {p['first_name']}",
+                    keyboard=kb)
+                self.bot.send_message(uid, "✅ Заявка на покупку отправлена администратору. Ожидайте подтверждения.", keyboard=self._fair_participant_kb())
 
             elif action == "fair_cancel_purchase":
                 self.bot.send_message(uid, "Покупка отменена.", keyboard=self._fair_participant_kb())
@@ -1434,7 +1519,7 @@ class CampBot:
                 return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
             balance = self.db.get_participant_balance(p['id'])
             history = self.db.get_balance_history(p['id']) if hasattr(self.db, 'get_balance_history') else []
-            lines = [f"💰 Ваш баланс: {balance} баллов"]
+            lines = [f"💰 Ваш баланс: {balance} HSE-коинов"]
             if history:
                 lines.append("\n📜 История:")
                 for item in history:
@@ -1531,24 +1616,21 @@ class CampBot:
             if cmd == "events":
                 kb = Keyboard(one_time=False, inline=False)
                 kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_event"}))
-                kb.add_line()
                 kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_events"}))
                 kb.add_line()
                 if self.db.has_open_registrations():
                     kb.add_button("Закрыть регистрацию", color="negative", payload=json.dumps({"cmd": "close_event_reg"}))
                     kb.add_line()
                 kb.add_button("Список", payload=json.dumps({"cmd": "view_events"}))
-                kb.add_line()
                 kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished_events"}))
                 kb.add_line()
                 kb.add_button("Команды", payload=json.dumps({"cmd": "view_event_teams"}))
+                kb.add_button("Создать команду", color="primary", payload=json.dumps({"cmd": "admin_create_team"}))
                 kb.add_line()
                 kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_event"}))
-                kb.add_line()
                 kb.add_button("Последнее закрытое", payload=json.dumps({"cmd": "last_closed_event"}))
                 kb.add_line()
                 kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_event"}))
-                kb.add_line()
                 kb.add_button("Удалить с мероприятия", color="negative", payload=json.dumps({"cmd": "admin_remove_from_event"}))
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
@@ -1557,22 +1639,18 @@ class CampBot:
             elif cmd == "mini_courses":
                 kb = Keyboard(one_time=False, inline=False)
                 kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_mini_course"}))
-                kb.add_line()
                 kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_mini_courses"}))
                 kb.add_line()
                 if self.db.has_open_registrations():
                     kb.add_button("Закрыть регистрацию", color="negative", payload=json.dumps({"cmd": "close_mini_course_reg"}))
                     kb.add_line()
                 kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished"}))
-                kb.add_line()
                 kb.add_button("Опубликованные", payload=json.dumps({"cmd": "view_published"}))
                 kb.add_line()
                 kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_mini_course"}))
-                kb.add_line()
                 kb.add_button("Последние закрытые", payload=json.dumps({"cmd": "last_closed_mini_courses"}))
                 kb.add_line()
                 kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_mc"}))
-                kb.add_line()
                 kb.add_button("Удалить с мини-курса", color="negative", payload=json.dumps({"cmd": "admin_remove_from_mc"}))
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
@@ -1622,7 +1700,7 @@ class CampBot:
                     if not regs:
                         lines.append("   Нет записей")
                     for r in regs:
-                        lines.append(f"   👤 {r['first_name']} {r['last_name']} — {r.get('time_slot_label', '')}")
+                        lines.append(f"   👤 {r['first_name']} {r['last_name']} — {r.get('slot_time', '')}")
                     lines.append("")
                 self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
 
@@ -1692,7 +1770,7 @@ class CampBot:
                 kb.add_line()
                 kb.add_button("Пополнить баланс", color="primary", payload=json.dumps({"cmd": "top_up_balance"}))
                 kb.add_line()
-                kb.add_button("Снять баллы со счета", color="negative", payload=json.dumps({"cmd": "deduct_balance"}))
+                kb.add_button("Снять HSE-коины со счета", color="negative", payload=json.dumps({"cmd": "deduct_balance"}))
                 kb.add_line()
                 kb.add_button("Команды на мероприятиях", payload=json.dumps({"cmd": "admin_event_teams"}))
                 kb.add_line()
@@ -1719,7 +1797,7 @@ class CampBot:
             elif cmd == "deduct_balance":
                 participants = self.db.get_all_participants()
                 if not participants:
-                    return self.bot.send_message(uid, "Нет участников для списания баллов.", keyboard=self.main_kb(role))
+                    return self.bot.send_message(uid, "Нет участников для списания HSE-коинов.", keyboard=self.main_kb(role))
                 ctx = {"participants": participants, "selected": [], "page": 0, "mode": "deduct"}
                 self._set_state(uid, "WAIT_BALANCE_SELECT", ctx)
                 self.bot.send_message(uid, self.balance_selection_text(ctx), keyboard=self.balance_selection_kb(ctx))
@@ -1752,6 +1830,13 @@ class CampBot:
                         lines.append(f"   👤 Капитан: {r['first_name']} {r['last_name']}")
                         lines.append(f"      🏷 {members}")
                 self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "admin_create_team":
+                events = self.db.get_active_events()
+                if not events:
+                    return self.bot.send_message(uid, "Нет активных мероприятий.", keyboard=self.main_kb(role))
+                self._set_state(uid, "ADMIN_CREATE_TEAM", {"events": events, "page": 0})
+                self.bot.send_message(uid, "Выберите мероприятие для создания команды:", keyboard=self._admin_create_team_event_kb(events, 0))
 
             elif cmd == "publish_events":
                 evts = self.db.publish_events()
@@ -1880,7 +1965,7 @@ class CampBot:
                     return self.bot.send_message(uid, "Список пуст.", keyboard=self.main_kb(role))
                 lines = ["👥 Участники:"]
                 for pr in parts:
-                    lines.append(f"  {pr['last_name']} {pr['first_name']} — 💰 {pr['balance']} баллов")
+                    lines.append(f"  {pr['last_name']} {pr['first_name']} — 💰 {pr['balance']} HSE-коинов")
                 self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
 
             elif cmd == "admin_event_teams":
@@ -2596,11 +2681,14 @@ class CampBot:
             event_id = self.db.get_active_fair_event_id()
             p = self.db.get_participant_by_user_id(uid)
             buyer_uid = p['id'] if p else 0
-            self.db.create_fair_transaction(
-                0, team_id, team_id, amount,
+            tx_id = self.db.create_fair_transaction(
+                None, team_id, team_id, amount,
                 buyer_uid, buyer_uid,
                 f"Штраф: {reason}"
             )
+            # Mark fine as approved immediately (no admin approval needed)
+            with self.db._get_conn() as conn:
+                conn.execute("UPDATE fair_transactions SET status='approved' WHERE id=?", (tx_id,))
             self._clear_state(uid)
             # Notify team members
             members = self.db.get_fair_team_members(team_id)

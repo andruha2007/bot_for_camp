@@ -1,6 +1,7 @@
 # main.py
 import os
 import sys
+import time
 import logging
 
 # 1. Загружаем конфиг
@@ -52,16 +53,23 @@ def main():
         logger.error(f"Oshibka BD: {e}", exc_info=True)
         sys.exit(1)
 
-    try:
-        bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
-        CampBot(bot, db)
+    retry_delay = 1
+    while True:
+        try:
+            bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+            CampBot(bot, db)
 
-        logger.info("Bot uspeshno zapushchen!")
-        bot.start_polling()
-    except Exception as e:
-        logger.error(f"Kriticheskaya oshibka pri zapuske: {e}", exc_info=True)
-        logger.error("Esli oshibka svyazana s 'getaddrinfo failed' ili 'api.vk.com', proverte nastrojki proksi v .env ili zapustite bota na VPS-servere.")
-        sys.exit(1)
+            logger.info("Bot uspeshno zapushchen!")
+            retry_delay = 1
+            bot.start_polling()
+        except KeyboardInterrupt:
+            logger.info("Bot ostanovlen po zaprosu.")
+            break
+        except Exception as e:
+            logger.error(f"Polling oshibka: {e}", exc_info=True)
+            logger.info(f"Restart cherez {retry_delay}s...")
+            time.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)
 
 if __name__ == "__main__":
     main()

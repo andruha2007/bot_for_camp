@@ -1136,3 +1136,1022 @@ vk_api.exceptions.ApiError: [911] Keyboard format is invalid: row 1 contains too
 2026-06-22 16:20:20,451 [INFO] __main__: Baza dannyh podklyuchena
 2026-06-22 16:20:21,232 [INFO] bot_logic: Admin sync complete
 2026-06-22 16:20:21,234 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 22:38:13,702 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 22:38:17,720 [INFO] bot_logic: Admin sync complete
+2026-06-23 22:38:17,722 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 22:54:07,273 [ERROR] bot_logic: Msg error: Max 10 lines for default keyboard
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 389, in handle_message
+    self.route_command(uid, role, cmd, p)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1553, in route_command
+    kb.add_line()
+    ~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\keyboard.py", line 300, in add_line
+    raise ValueError(f'Max {MAX_DEFAULT_LINES} lines for default keyboard')
+ValueError: Max 10 lines for default keyboard
+2026-06-23 22:54:34,063 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 22:54:35,558 [INFO] bot_logic: Admin sync complete
+2026-06-23 22:54:35,559 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 22:56:13,858 [ERROR] bot_logic: Msg error: Max 10 lines for default keyboard
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 389, in handle_message
+    self.route_command(uid, role, cmd, p)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1553, in route_command
+    kb.add_line()
+    ~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\keyboard.py", line 300, in add_line
+    raise ValueError(f'Max {MAX_DEFAULT_LINES} lines for default keyboard')
+ValueError: Max 10 lines for default keyboard
+2026-06-23 22:56:26,191 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 22:56:27,241 [INFO] bot_logic: Admin sync complete
+2026-06-23 22:56:27,244 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 22:56:51,445 [ERROR] bot_logic: Msg error: Max 10 lines for default keyboard
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 389, in handle_message
+    self.route_command(uid, role, cmd, p)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1553, in route_command
+    kb.add_line()
+    ~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\keyboard.py", line 300, in add_line
+    raise ValueError(f'Max {MAX_DEFAULT_LINES} lines for default keyboard')
+ValueError: Max 10 lines for default keyboard
+2026-06-23 22:57:09,511 [ERROR] bot_logic: Msg error: Max 10 lines for default keyboard
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 389, in handle_message
+    self.route_command(uid, role, cmd, p)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1553, in route_command
+    kb.add_line()
+    ~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\keyboard.py", line 300, in add_line
+    raise ValueError(f'Max {MAX_DEFAULT_LINES} lines for default keyboard')
+ValueError: Max 10 lines for default keyboard
+2026-06-23 22:57:20,107 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 22:57:24,020 [INFO] bot_logic: Admin sync complete
+2026-06-23 22:57:24,023 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 23:01:02,389 [ERROR] bot_logic: Msg error: Max 10 lines for default keyboard
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 389, in handle_message
+    self.route_command(uid, role, cmd, p)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1553, in route_command
+    kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished"}))
+    ^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\keyboard.py", line 300, in add_line
+    raise ValueError(f'Max {MAX_DEFAULT_LINES} lines for default keyboard')
+ValueError: Max 10 lines for default keyboard
+2026-06-23 23:01:17,052 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 23:01:18,167 [INFO] bot_logic: Admin sync complete
+2026-06-23 23:01:18,168 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 23:19:38,325 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 23:19:40,985 [INFO] bot_logic: Admin sync complete
+2026-06-23 23:19:40,988 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 23:21:09,909 [ERROR] bot_logic: Callback error: [911] Keyboard format is invalid: row 1 contains too much columns
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 509, in _handle_callback_safe
+    self.bot.send_message(uid, "Выберите капитана команды:", keyboard=kb)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 274, in send_message
+    self.send_api_method("messages.send", data)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 245, in send_api_method
+    response = self.vk_session.method(method, payload)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 934, in method
+    raise error
+vk_api.exceptions.ApiError: [911] Keyboard format is invalid: row 1 contains too much columns
+2026-06-23 23:21:16,689 [ERROR] bot_logic: Callback error: [911] Keyboard format is invalid: row 1 contains too much columns
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 509, in _handle_callback_safe
+    self.bot.send_message(uid, "Выберите капитана команды:", keyboard=kb)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 274, in send_message
+    self.send_api_method("messages.send", data)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 245, in send_api_method
+    response = self.vk_session.method(method, payload)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 934, in method
+    raise error
+vk_api.exceptions.ApiError: [911] Keyboard format is invalid: row 1 contains too much columns
+2026-06-23 23:30:34,723 [ERROR] bot_logic: Callback error: [911] Keyboard format is invalid: row 1 contains too much columns
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 509, in _handle_callback_safe
+    elif action == "disband_team":
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 274, in send_message
+    self.send_api_method("messages.send", data)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 245, in send_api_method
+    response = self.vk_session.method(method, payload)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 934, in method
+    raise error
+vk_api.exceptions.ApiError: [911] Keyboard format is invalid: row 1 contains too much columns
+2026-06-23 23:30:58,218 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-23 23:31:14,588 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 23:31:15,773 [INFO] bot_logic: Admin sync complete
+2026-06-23 23:31:15,777 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 23:37:31,100 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='lp.vk.com', port=443): Max retries exceeded with url: /whp/238077609?act=a_check&key=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJxdWV1ZV9pZCI6IjIzODA3NzYwOSIsInVudGlsIjoxNzgyMjUwMjc0ODQzNTY3ODM0fQ.DN9fBdUG_V3twbz6IH3_UzF-Yw6g9wSanl_5ZcQOVeIF3Qk3fDp4C4AW-Ig44yWQSyac00ek8B6Cl9tyO-tmDw&ts=5315&wait=25 (Caused by NameResolutionError("HTTPSConnection(host='lp.vk.com', port=443): Failed to resolve 'lp.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "C:\Python314\Lib\http\client.py", line 1459, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 729, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Python314\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 498, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\util.py", line 39, in reraise
+    raise value
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+        self, url, f"Read timed out. (read timeout={timeout_value})"
+    ) from err
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='lp.vk.com', port=443): Read timed out. (read timeout=35)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 286, in start_polling
+    for event in self.longpoll.listen():
+                 ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 286, in listen
+    yield from self.check()
+               ~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 255, in check
+    response = self.session.get(
+               ~~~~~~~~~~~~~~~~^
+        self.url,
+        ^^^^^^^^^
+        params=values,
+        ^^^^^^^^^^^^^^
+        timeout=self.wait + 10
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ).json()
+    ^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 671, in get
+    return self.request("GET", url, params=params, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 742, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='lp.vk.com', port=443): Read timed out. (read timeout=35)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "C:\Python314\Lib\http\client.py", line 1459, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 729, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Python314\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 498, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\util.py", line 39, in reraise
+    raise value
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+        self, url, f"Read timed out. (read timeout={timeout_value})"
+    ) from err
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='lp.vk.com', port=443): Read timed out. (read timeout=35)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 286, in start_polling
+    for event in self.longpoll.listen():
+                 ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 286, in listen
+    yield from self.check()
+               ~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 255, in check
+    response = self.session.get(
+               ~~~~~~~~~~~~~~~~^
+        self.url,
+        ^^^^^^^^^
+        params=values,
+        ^^^^^^^^^^^^^^
+        timeout=self.wait + 10
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ).json()
+    ^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 671, in get
+    return self.request("GET", url, params=params, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 742, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='lp.vk.com', port=443): Read timed out. (read timeout=35)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='lp.vk.com', port=443): Failed to resolve 'lp.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='lp.vk.com', port=443): Max retries exceeded with url: /whp/238077609?act=a_check&key=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJxdWV1ZV9pZCI6IjIzODA3NzYwOSIsInVudGlsIjoxNzgyMjUwMjc0ODQzNTY3ODM0fQ.DN9fBdUG_V3twbz6IH3_UzF-Yw6g9wSanl_5ZcQOVeIF3Qk3fDp4C4AW-Ig44yWQSyac00ek8B6Cl9tyO-tmDw&ts=5315&wait=25 (Caused by NameResolutionError("HTTPSConnection(host='lp.vk.com', port=443): Failed to resolve 'lp.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 64, in main
+    bot.start_polling()
+    ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 293, in start_polling
+    self.start_polling()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 293, in start_polling
+    self.start_polling()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 286, in start_polling
+    for event in self.longpoll.listen():
+                 ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 286, in listen
+    yield from self.check()
+               ~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 255, in check
+    response = self.session.get(
+               ~~~~~~~~~~~~~~~~^
+        self.url,
+        ^^^^^^^^^
+        params=values,
+        ^^^^^^^^^^^^^^
+        timeout=self.wait + 10
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ).json()
+    ^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 671, in get
+    return self.request("GET", url, params=params, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='lp.vk.com', port=443): Max retries exceeded with url: /whp/238077609?act=a_check&key=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJxdWV1ZV9pZCI6IjIzODA3NzYwOSIsInVudGlsIjoxNzgyMjUwMjc0ODQzNTY3ODM0fQ.DN9fBdUG_V3twbz6IH3_UzF-Yw6g9wSanl_5ZcQOVeIF3Qk3fDp4C4AW-Ig44yWQSyac00ek8B6Cl9tyO-tmDw&ts=5315&wait=25 (Caused by NameResolutionError("HTTPSConnection(host='lp.vk.com', port=443): Failed to resolve 'lp.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:37:31,276 [INFO] __main__: Restart cherez 1s...
+2026-06-23 23:37:32,343 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:37:32,375 [INFO] __main__: Restart cherez 2s...
+2026-06-23 23:37:34,402 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:37:34,410 [INFO] __main__: Restart cherez 4s...
+2026-06-23 23:37:38,414 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:37:38,425 [INFO] __main__: Restart cherez 8s...
+2026-06-23 23:37:46,431 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:37:46,441 [INFO] __main__: Restart cherez 16s...
+2026-06-23 23:38:02,447 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:38:02,466 [INFO] __main__: Restart cherez 32s...
+2026-06-23 23:38:34,476 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:38:34,501 [INFO] __main__: Restart cherez 60s...
+2026-06-23 23:39:34,517 [ERROR] __main__: Polling oshibka: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+        (self._dns_host, self.port),
+    ...<2 lines>...
+        socket_options=self.socket_options,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 987, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno 11001] getaddrinfo failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\urllib3\util\retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\main.py", line 59, in main
+    bot = Bot(token=config.VK_BOT_TOKEN, group_id=config.VK_GROUP_ID)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\pyvkbot\Bot.py", line 42, in __init__
+    self.longpoll = VkBotLongPoll(self.vk_session, group_id=group_id)
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 219, in __init__
+    self.update_longpoll_server()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\bot_longpoll.py", line 232, in update_longpoll_server
+    response = self.vk.method('groups.getLongPollServer', values)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\vk_api.py", line 897, in method
+    response = self.http.post(
+        f'https://api.vk.com/method/{method}',
+        values,
+        headers=None if with_cookies else {'Cookie': ''},
+    )
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 712, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\requests\adapters.py", line 729, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port=443): Max retries exceeded with url: /method/groups.getLongPollServer (Caused by NameResolutionError("HTTPSConnection(host='api.vk.com', port=443): Failed to resolve 'api.vk.com' ([Errno 11001] getaddrinfo failed)"))
+2026-06-23 23:39:34,547 [INFO] __main__: Restart cherez 60s...
+2026-06-23 23:40:35,517 [INFO] bot_logic: Admin sync complete
+2026-06-23 23:40:35,519 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 23:40:58,338 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-23 23:55:52,390 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-23 23:55:53,315 [INFO] bot_logic: Admin sync complete
+2026-06-23 23:55:53,316 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-23 23:57:34,335 [INFO] __main__: Bot ostanovlen po zaprosu.

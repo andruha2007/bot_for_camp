@@ -12,9 +12,11 @@ class DatabaseManager:
 
     @contextmanager
     def _get_conn(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
         try:
             yield conn
             conn.commit()
@@ -240,6 +242,24 @@ class DatabaseManager:
                     ).fetchone()
                     if cap:
                         conn.execute("UPDATE event_registrations SET captain_id=? WHERE id=?", (cap['participant_id'], row['id']))
+
+        # Indexes for performance
+        existing_indexes = {r[2] for r in conn.execute("SELECT * FROM sqlite_master WHERE type='index'")}
+        fair_indexes = {
+            "idx_fair_items_team_id": "CREATE INDEX IF NOT EXISTS idx_fair_items_team_id ON fair_items(team_id)",
+            "idx_fair_items_is_active": "CREATE INDEX IF NOT EXISTS idx_fair_items_is_active ON fair_items(is_active)",
+            "idx_fair_transactions_status": "CREATE INDEX IF NOT EXISTS idx_fair_transactions_status ON fair_transactions(status)",
+            "idx_fair_transactions_buyer": "CREATE INDEX IF NOT EXISTS idx_fair_transactions_buyer ON fair_transactions(buyer_team_id)",
+            "idx_fair_transactions_seller": "CREATE INDEX IF NOT EXISTS idx_fair_transactions_seller ON fair_transactions(seller_team_id)",
+            "idx_fair_teams_event_id": "CREATE INDEX IF NOT EXISTS idx_fair_teams_event_id ON fair_teams(event_id)",
+            "idx_event_registrations_event": "CREATE INDEX IF NOT EXISTS idx_event_registrations_event ON event_registrations(event_id)",
+            "idx_event_registrations_participant": "CREATE INDEX IF NOT EXISTS idx_event_registrations_participant ON event_registrations(participant_id)",
+            "idx_participants_user_id": "CREATE INDEX IF NOT EXISTS idx_participants_user_id ON participants(user_id)",
+            "idx_fair_admin_queue_event": "CREATE INDEX IF NOT EXISTS idx_fair_admin_queue_event ON fair_admin_queue(event_id)",
+        }
+        for name, ddl in fair_indexes.items():
+            if name not in existing_indexes:
+                conn.execute(ddl)
 
     def generate_personal_code(self) -> str:
         while True:
@@ -871,8 +891,10 @@ class DatabaseManager:
             reg = conn.execute("SELECT team_members FROM event_registrations WHERE event_id=? AND participant_id=?", (event_id, p['id'])).fetchone()
             if not reg:
                 return None
-            members = [m.strip() for m in (reg['team_members'] or '').split(',')]
-            return [dict(r) for r in conn.execute("SELECT first_name, last_name FROM participants WHERE CONCAT(last_name, ' ', first_name) IN ({})".format(','.join(['?']*len(members))), members).fetchall()]
+            members = [m.strip() for m in (reg['team_members'] or '').split(',') if m.strip()]
+            if not members:
+                return []
+            return [dict(r) for r in conn.execute("SELECT first_name, last_name, user_id FROM participants WHERE (last_name || ' ' || first_name) IN ({})".format(','.join(['?']*len(members))), members).fetchall()]
 
     def leave_event_team(self, event_id: int, user_id: int) -> Tuple[bool, str, Optional[int], bool]:
         """
@@ -995,46 +1017,50 @@ class DatabaseManager:
             try:
                 cap = conn.execute("SELECT id, first_name, last_name FROM participants WHERE user_id=?", (captain_user_id,)).fetchone()
                 if not cap:
-                    return False, "Вы не зарегистрированы", errors
+                    conn.rollback()
+                    return False, "Капитан не зарегистрирован", errors
 
-                # Проверяем каждого выбранного участника в одной транзакции
+                cap_existing = conn.execute(
+                    "SELECT 1 FROM event_registrations WHERE event_id=? AND participant_id=?",
+                    (event_id, cap['id'])
+                ).fetchone()
+                if cap_existing:
+                    conn.rollback()
+                    return False, "Капитан уже состоит в команде на этом мероприятии", errors
+
                 member_participant_ids = []
+                members_names = []
                 for vk_uid in selected_user_ids:
                     p = conn.execute("SELECT id, first_name, last_name FROM participants WHERE user_id=?", (vk_uid,)).fetchone()
                     if not p:
                         errors.append(f"Участник с ID {vk_uid} не найден")
                         continue
-                    existing = conn.execute(
-                        "SELECT 1 FROM event_registrations WHERE event_id=? AND participant_id=?",
-                        (event_id, p['id'])
-                    ).fetchone()
-                    if existing:
-                        errors.append(f"{p['last_name']} {p['first_name']} уже состоит в другой команде")
-                        continue
+                    if p['id'] != cap['id']:
+                        existing = conn.execute(
+                            "SELECT 1 FROM event_registrations WHERE event_id=? AND participant_id=?",
+                            (event_id, p['id'])
+                        ).fetchone()
+                        if existing:
+                            errors.append(f"{p['last_name']} {p['first_name']} уже состоит в другой команде")
+                            continue
                     member_participant_ids.append(p['id'])
+                    members_names.append(f"{p['last_name']} {p['first_name']}")
 
                 if errors:
                     conn.rollback()
                     return False, "Некоторые участники не могут быть добавлены", errors
 
-                # Удаляем старую регистрацию капитана (если была)
-                conn.execute("DELETE FROM event_registrations WHERE event_id=? AND participant_id=?", (event_id, cap['id']))
+                conn.execute(
+                    "INSERT INTO event_registrations (event_id, participant_id, team_members, captain_id) VALUES (?, ?, ?, ?)",
+                    (event_id, cap['id'], ", ".join(members_names), cap['id'])
+                )
 
-                # Создаём запись — капитан регистрирует команду
-                members_names = []
                 for pid in member_participant_ids:
-                    p = conn.execute("SELECT first_name, last_name FROM participants WHERE id=?", (pid,)).fetchone()
-                    if p:
-                        members_names.append(f"{p['last_name']} {p['first_name']}")
+                    if pid != cap['id']:
                         conn.execute(
-                            "INSERT OR IGNORE INTO event_registrations (event_id, participant_id, team_members, captain_id) VALUES (?, ?, ?, ?)",
+                            "INSERT INTO event_registrations (event_id, participant_id, team_members, captain_id) VALUES (?, ?, ?, ?)",
                             (event_id, pid, "", cap['id'])
                         )
-                # Обновляем team_members у капитана (храним список имён)
-                conn.execute(
-                    "UPDATE event_registrations SET team_members=? WHERE event_id=? AND participant_id=?",
-                    (", ".join(members_names), event_id, cap['id'])
-                )
 
                 conn.commit()
             except Exception as e:
@@ -1196,17 +1222,29 @@ class DatabaseManager:
 
     def login_with_personal_code(self, uid: int, pc: str) -> Tuple[bool, str, Optional[Dict]]:
         with self._get_conn() as conn:
-            pr = conn.execute("SELECT * FROM pre_registered_participants WHERE personal_code=? AND is_used=0", (pc,)).fetchone()
-            if not pr:
-                return False, "Код не найден", None
-            ex = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
-            if ex:
-                return False, f"Вы уже {ex['first_name']}", ex
-            conn.execute("INSERT INTO participants (user_id, first_name, last_name, personal_code) VALUES (?, ?, ?, ?)",
-                        (uid, pr['first_name'], pr['last_name'], pc))
-            conn.execute("UPDATE pre_registered_participants SET is_used=1 WHERE id=?", (pr['id'],))
-            p = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
-            return True, f"Привет, {p['first_name']}!", dict(p)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                pr = conn.execute("SELECT * FROM pre_registered_participants WHERE personal_code=? AND is_used=0", (pc,)).fetchone()
+                if not pr:
+                    conn.rollback()
+                    return False, "Код не найден", None
+                ex = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
+                if ex:
+                    conn.rollback()
+                    return False, f"Вы уже {ex['first_name']}", ex
+                # Mark code as used first
+                cur = conn.execute("UPDATE pre_registered_participants SET is_used=1 WHERE id=?", (pr['id'],))
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    return False, "Код уже использован", None
+                conn.execute("INSERT INTO participants (user_id, first_name, last_name, personal_code) VALUES (?, ?, ?, ?)",
+                            (uid, pr['first_name'], pr['last_name'], pc))
+                p = conn.execute("SELECT * FROM participants WHERE user_id=?", (uid,)).fetchone()
+                conn.commit()
+                return True, f"Привет, {p['first_name']}!", dict(p)
+            except Exception as e:
+                conn.rollback()
+                raise e
 
     def login_with_admin_invite(self, uid: int, invite_code: str) -> Tuple[bool, str, Optional[Dict]]:
         with self._get_conn() as conn:
@@ -1401,7 +1439,7 @@ class DatabaseManager:
                 ORDER BY ft.team_name, fi.name
             """, (event_id,)).fetchall()]
 
-    def create_fair_transaction(self, item_id: int, buyer_team_id: int, seller_team_id: int,
+    def create_fair_transaction(self, item_id: Optional[int], buyer_team_id: int, seller_team_id: int,
                                 amount: int, buyer_user_id: int, seller_user_id: int,
                                 description: str = "") -> int:
         with self._get_conn() as conn:
@@ -1411,19 +1449,25 @@ class DatabaseManager:
             """, (item_id, buyer_team_id, seller_team_id, buyer_user_id, seller_user_id, amount, description)).lastrowid
 
     def approve_fair_transaction(self, transaction_id: int) -> bool:
-        tx = self.get_fair_transaction(transaction_id)
-        if not tx or tx['status'] != 'pending':
-            return False
-        buyer = self.get_fair_team(tx['buyer_team_id'])
-        seller = self.get_fair_team(tx['seller_team_id'])
-        if not buyer or not seller:
-            return False
-        if buyer['budget'] < tx['amount']:
-            return False
         with self._get_conn() as conn:
-            conn.execute("UPDATE fair_teams SET budget = budget - ? WHERE id=?", (tx['amount'], tx['buyer_team_id']))
-            conn.execute("UPDATE fair_teams SET budget = budget + ? WHERE id=?", (tx['amount'], tx['seller_team_id']))
-            conn.execute("UPDATE fair_transactions SET status='approved' WHERE id=?", (transaction_id,))
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                tx = conn.execute("SELECT * FROM fair_transactions WHERE id=? AND status='pending'", (transaction_id,)).fetchone()
+                if not tx:
+                    conn.rollback()
+                    return False
+                buyer = conn.execute("SELECT * FROM fair_teams WHERE id=?", (tx['buyer_team_id'],)).fetchone()
+                seller = conn.execute("SELECT * FROM fair_teams WHERE id=?", (tx['seller_team_id'],)).fetchone()
+                if not buyer or not seller or buyer['budget'] < tx['amount']:
+                    conn.rollback()
+                    return False
+                conn.execute("UPDATE fair_teams SET budget = budget - ? WHERE id=?", (tx['amount'], tx['buyer_team_id']))
+                conn.execute("UPDATE fair_teams SET budget = budget + ? WHERE id=?", (tx['amount'], tx['seller_team_id']))
+                conn.execute("UPDATE fair_transactions SET status='approved' WHERE id=?", (transaction_id,))
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                raise e
         return True
 
     def reject_fair_transaction(self, transaction_id: int):
@@ -1440,7 +1484,7 @@ class DatabaseManager:
             return [dict(r) for r in conn.execute("""
                 SELECT ftx.*, fi.name as item_name
                 FROM fair_transactions ftx
-                JOIN fair_items fi ON fi.id = ftx.item_id
+                LEFT JOIN fair_items fi ON fi.id = ftx.item_id
                 JOIN fair_teams ft ON ft.id = ftx.buyer_team_id
                 WHERE ft.event_id=? AND ftx.status='pending'
                 ORDER BY ftx.created_at ASC
@@ -1453,7 +1497,7 @@ class DatabaseManager:
                        (SELECT team_name FROM fair_teams WHERE id=ftx.buyer_team_id) as buyer_team_name,
                        (SELECT team_name FROM fair_teams WHERE id=ftx.seller_team_id) as seller_team_name
                 FROM fair_transactions ftx
-                JOIN fair_items fi ON fi.id = ftx.item_id
+                LEFT JOIN fair_items fi ON fi.id = ftx.item_id
                 WHERE ftx.buyer_team_id=? OR ftx.seller_team_id=?
                 ORDER BY ftx.created_at DESC
             """, (team_id, team_id)).fetchall()]
@@ -1481,7 +1525,7 @@ class DatabaseManager:
                        (SELECT team_name FROM fair_teams WHERE id=ftx.buyer_team_id) as buyer_team_name,
                        (SELECT team_name FROM fair_teams WHERE id=ftx.seller_team_id) as seller_team_name
                 FROM fair_transactions ftx
-                JOIN fair_items fi ON fi.id = ftx.item_id
+                LEFT JOIN fair_items fi ON fi.id = ftx.item_id
                 JOIN fair_teams ft ON ft.id = ftx.buyer_team_id
                 WHERE ft.event_id=?
                 ORDER BY ftx.created_at DESC
@@ -1950,7 +1994,9 @@ class DatabaseManager:
             return [dict(r) for r in conn.execute("""
                 SELECT p.id, p.user_id, p.first_name, p.last_name,
                        er.captain_id,
+                       CASE WHEN er.captain_id = er.participant_id THEN 1 ELSE 0 END as is_captain,
                        (SELECT (p3.last_name || ' ' || p3.first_name) FROM participants p3 WHERE p3.id = er.captain_id) as captain_name,
+                       (SELECT (p3.last_name || ' ' || p3.first_name) FROM participants p3 WHERE p3.id = er.captain_id) as team_name,
                        er.team_members
                 FROM participants p
                 LEFT JOIN event_registrations er ON er.event_id=? AND er.participant_id = p.id
