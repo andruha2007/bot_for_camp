@@ -58,6 +58,8 @@ class CampBot:
         fair_active = self.db.is_fair_active() and not self.db.is_fair_completed()
         if role in ("admin", "super_admin"):
             kb.add_button("Мероприятие", color="primary", payload=json.dumps({"cmd": "events"}))
+            if not self.db.has_project_registration_been_closed():
+                kb.add_button("Проекты", color="primary", payload=json.dumps({"cmd": "projects"}))
             kb.add_button("Мини-курсы", color="primary", payload=json.dumps({"cmd": "mini_courses"}))
             kb.add_line()
             kb.add_button("Жалобы", color="primary", payload=json.dumps({"cmd": "complaints"}))
@@ -74,6 +76,9 @@ class CampBot:
             kb.add_button("Мероприятия", color="primary", payload=json.dumps({"cmd": "register_event"}))
             kb.add_line()
             kb.add_button("Мини-курсы", color="primary", payload=json.dumps({"cmd": "register_mini_course"}))
+            if self.db.has_open_project_registrations():
+                kb.add_line()
+                kb.add_button("Выбрать проект", color="primary", payload=json.dumps({"cmd": "register_project"}))
             if fair_active:
                 kb.add_line()
                 kb.add_button("🏪 Перейти к ярмарке", color="primary", payload=json.dumps({"cmd": "go_fair"}))
@@ -308,6 +313,27 @@ class CampBot:
             )
             kb.add_line()
         kb.add_callback_button("◀️ Назад", color="secondary", payload=json.dumps({"action": "admin_remove_from_mc"}))
+        return kb
+
+    # === Клавиатуры для проектов ===
+    def project_priority_kb(self, projects, selected_ids) -> Keyboard:
+        kb = Keyboard(inline=True)
+        for i, proj in enumerate(projects):
+            is_sel = proj['id'] in selected_ids
+            emoji = "✅" if is_sel else "⬜"
+            label = f"{emoji} {proj['name'][:30]}"
+            kb.add_callback_button(
+                label[:40], color="positive" if is_sel else "primary",
+                payload=json.dumps({"action": "pick_project_priority", "project_id": proj['id']})
+            )
+            if i < len(projects) - 1:
+                kb.add_line()
+        return kb
+
+    def project_confirm_kb(self) -> Keyboard:
+        kb = Keyboard(inline=True)
+        kb.add_callback_button("✅ Подтвердить", color="positive", payload=json.dumps({"action": "confirm_project_priorities"}))
+        kb.add_callback_button("🔄 Заново", color="secondary", payload=json.dumps({"action": "restart_project_priorities"}))
         return kb
 
     # === Клавиатуры для ярмарки ===
@@ -753,6 +779,7 @@ class CampBot:
                     "admin_remove_from_event": "Выберите участника для удаления с мероприятия:",
                     "admin_reg_mc": "Выберите участника для записи на мини-курс:",
                     "admin_remove_from_mc": "Выберите участника для удаления с мини-курса:",
+                    "admin_reg_project": "Выберите участника для регистрации на проекты:",
                 }
                 text = text_map.get(target, "Выберите участника:")
                 self.bot.send_api_method("messages.edit", {
@@ -762,7 +789,7 @@ class CampBot:
                     "keyboard": self.admin_participant_kb(participants, page, prefix, target).get_keyboard()
                 })
 
-            elif action in ("admin_reg_event", "admin_reg_mc", "admin_remove_from_event", "admin_remove_from_mc"):
+            elif action in ("admin_reg_event", "admin_reg_mc", "admin_remove_from_event", "admin_remove_from_mc", "admin_reg_project"):
                 if role not in ("admin", "super_admin"):
                     return
                 participants = self.db.get_all_participants()
@@ -771,12 +798,14 @@ class CampBot:
                     "admin_remove_from_event": "Выберите участника для удаления с мероприятия:",
                     "admin_reg_mc": "Выберите участника для записи на мини-курс:",
                     "admin_remove_from_mc": "Выберите участника для удаления с мини-курса:",
+                    "admin_reg_project": "Выберите участника для регистрации на проекты:",
                 }
                 prefix_map = {
                     "admin_reg_event": "admin_reg_event_pick",
                     "admin_remove_from_event": "admin_unreg_event_pick",
                     "admin_reg_mc": "admin_reg_mc_pick_part",
                     "admin_remove_from_mc": "admin_unreg_mc_pick",
+                    "admin_reg_project": "admin_reg_project_pick",
                 }
                 text = text_map.get(action, "Выберите участника:")
                 prefix = prefix_map.get(action, "admin_reg_event_pick")
@@ -1140,6 +1169,188 @@ class CampBot:
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
                 self.bot.send_message(uid, "Меню мини-курсов:", keyboard=kb)
+
+            elif action == "show_admin_projects":
+                if role not in ("admin", "super_admin"):
+                    return
+                kb = Keyboard(one_time=False, inline=False)
+                kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_project"}))
+                kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_projects"}))
+                kb.add_line()
+                kb.add_button("Запустить регистрацию", color="positive", payload=json.dumps({"cmd": "start_project_reg"}))
+                kb.add_line()
+                if self.db.has_open_project_registrations():
+                    kb.add_button("Закрыть регистрацию", color="negative", payload=json.dumps({"cmd": "close_project_reg"}))
+                    kb.add_line()
+                kb.add_button("Список", payload=json.dumps({"cmd": "view_projects"}))
+                kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished_projects"}))
+                kb.add_line()
+                kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_project"}))
+                kb.add_line()
+                kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_project"}))
+                kb.add_line()
+                kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
+                self.bot.send_message(uid, "Меню проектов:", keyboard=kb)
+
+            # === Проекты: выбор приоритетов ===
+            elif action == "pick_project_priority":
+                proj_id = payload["project_id"]
+                state_data = self.states.get(uid, {})
+                ctx = state_data.get("ctx", {})
+                if not ctx or "projects" not in ctx:
+                    return
+                projects = ctx["projects"]
+                selected = ctx.get("selected", {})
+                next_priority = ctx.get("next_priority", 1)
+
+                if proj_id in selected:
+                    return self.bot.send_message(uid, "Этот проект уже выбран.")
+
+                selected[proj_id] = next_priority
+                next_priority += 1
+
+                remaining = [p for p in projects if p['id'] not in selected]
+
+                ctx["selected"] = selected
+                ctx["next_priority"] = next_priority
+                self.states[uid]["ctx"] = ctx
+
+                sorted_projs = sorted(projects, key=lambda p: selected.get(p['id'], 999))
+                status_lines = []
+                for p in sorted_projs:
+                    if p['id'] in selected:
+                        status_lines.append(f"{selected[p['id']]}) {p['name']}")
+                    else:
+                        status_lines.append(f"   {p['name']}")
+
+                if not remaining:
+                    lines = ["✅ Все проекты распределены по приоритетам:\n"]
+                    for i, proj in enumerate(sorted_projs):
+                        lines.append(f"{i+1}) {proj['name']}")
+                    self.bot.send_message(
+                        uid,
+                        "\n".join(lines),
+                        keyboard=self.project_confirm_kb()
+                    )
+                else:
+                    self.bot.send_message(
+                        uid,
+                        "Ваши приоритеты:\n" + "\n".join(status_lines) +
+                        f"\n\nВыберите проект для приоритета {next_priority}:",
+                        keyboard=self.project_priority_kb(remaining, list(selected.keys()))
+                    )
+
+            elif action == "confirm_project_priorities":
+                state_data = self.states.get(uid, {})
+                ctx = state_data.get("ctx", {})
+                if not ctx or "selected" not in ctx:
+                    return
+                target_pid = ctx.get("target_pid")
+                if not target_pid:
+                    return
+                is_admin_mode = uid != self.db.get_participant_by_id(target_pid).get('user_id') if self.db.get_participant_by_id(target_pid) else False
+                priorities = ctx["selected"]
+                self.db.save_project_priorities(target_pid, priorities)
+                self._clear_state(uid)
+                if is_admin_mode:
+                    self.bot.send_message(uid, f"✅ Приоритеты сохранены для участника.", keyboard=self.main_kb(role))
+                else:
+                    self.bot.send_message(uid, "✅ Ваши приоритеты сохранены!", keyboard=self.main_kb(role))
+
+            elif action == "restart_project_priorities":
+                state_data = self.states.get(uid, {})
+                ctx = state_data.get("ctx", {})
+                if not ctx or "projects" not in ctx:
+                    return
+                projects = ctx["projects"]
+                ctx["selected"] = {}
+                ctx["next_priority"] = 1
+                self.states[uid]["ctx"] = ctx
+                self.bot.send_message(
+                    uid,
+                    "🔄 Начнём заново. Выберите проект для приоритета 1 (самый желаемый):",
+                    keyboard=self.project_priority_kb(projects, [])
+                )
+
+            # === Проекты: админ удаление ===
+            elif action == "confirm_delete_project":
+                if role not in ("admin", "super_admin"):
+                    return
+                proj_id = payload["project_id"]
+                proj = self.db.get_project(proj_id)
+                if proj and not proj.get('is_published'):
+                    self.db.delete_project(proj_id)
+                    self.bot.send_message(uid, f"🗑 Проект «{proj['name']}» удалён.", keyboard=self.main_kb(role))
+                else:
+                    self.bot.send_message(uid, "Этот проект уже опубликован или не найден.", keyboard=self.main_kb(role))
+
+            # === Проекты: закрытие регистрации ===
+            elif action == "confirm_close_project_reg":
+                if role not in ("admin", "super_admin"):
+                    return
+                if not self.db.has_open_project_registrations():
+                    return self.bot.send_message(uid, "Нет открытых регистраций на проекты.", keyboard=self.main_kb(role))
+                results = self.db.close_project_registration()
+                # Уведомить всех участников
+                all_pids = self.db.get_all_participant_user_ids()
+                for pid in all_pids:
+                    if pid != uid:
+                        try:
+                            self.bot.send_message(
+                                pid,
+                                "🔒 Регистрация на проекты закрыта. Выбор проектов больше недоступен.",
+                                keyboard=self.main_kb('participant')
+                            )
+                        except Exception:
+                            pass
+                # Отчёт админу
+                msg_parts = ["✅ Регистрация на проекты закрыта.\n"]
+                if results:
+                    for r in results:
+                        name = f"{r['first_name']} {r['last_name']}".strip()
+                        msg_parts.append(f"{name}")
+                        for c in r['choices']:
+                            msg_parts.append(f"{c['priority']}) {c['project_name']}")
+                        msg_parts.append("")
+                else:
+                    msg_parts.append("Никто не выбрал проекты.")
+                self.bot.send_message(uid, "\n".join(msg_parts), keyboard=self.main_kb(role))
+
+            # === Проекты: админ запись участника ===
+            elif action == "admin_reg_project_pick":
+                if role not in ("admin", "super_admin"):
+                    return
+                pid = payload["pid"]
+                p = self.db.get_participant_by_id(pid)
+                if not p:
+                    return self.bot.send_message(uid, "Участник не найден.", keyboard=self.main_kb(role))
+                projs = self.db.get_published_projects()
+                if not projs:
+                    return self.bot.send_message(uid, "Нет опубликованных проектов.", keyboard=self.main_kb(role))
+                if not projs:
+                    return self.bot.send_message(uid, "Нет проектов для регистрации.", keyboard=self.main_kb(role))
+
+                lines = ["📋 Проекты для выбора приоритетов:\n"]
+                for i, proj in enumerate(projs):
+                    lines.append(f"{i+1}. {proj['name']}")
+                    lines.append(f"   {proj['description']}\n")
+
+                self._set_state(uid, "PROJECT_PRIORITY_SELECT", {
+                    "projects": projs,
+                    "selected": {},
+                    "next_priority": 1,
+                    "target_pid": pid
+                })
+
+                self.bot.send_message(
+                    uid,
+                    f"Выберите приоритеты проектов для {p['last_name']} {p['first_name']}:\n" + "\n".join(lines)
+                )
+                self.bot.send_message(
+                    uid,
+                    f"Выберите проект для приоритета 1 (самый желаемый):",
+                    keyboard=self.project_priority_kb(projs, [])
+                )
 
             # === Ярмарка: просмотр товара ===
             elif action == "fair_view_item":
@@ -1605,6 +1816,34 @@ class CampBot:
 
                 self.bot.send_message(uid, "\n".join(lines), keyboard=kb)
 
+        elif cmd == "register_project":
+            if not p:
+                return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
+            projs = self.db.get_published_projects()
+            if not projs:
+                return self.bot.send_message(uid, "Нет доступных проектов для выбора.", keyboard=self.main_kb(role))
+            if self.db.has_participant_submitted_priorities(p['id']):
+                return self.bot.send_message(uid, "Вы уже выбрали приоритеты проектов.", keyboard=self.main_kb(role))
+
+            lines = ["📋 Проекты для выбора приоритетов:\n"]
+            for i, proj in enumerate(projs):
+                lines.append(f"{i+1}. {proj['name']}")
+                lines.append(f"   {proj['description']}\n")
+
+            self._set_state(uid, "PROJECT_PRIORITY_SELECT", {
+                "projects": projs,
+                "selected": {},
+                "next_priority": 1,
+                "target_pid": p['id']
+            })
+
+            self.bot.send_message(uid, "\n".join(lines))
+            self.bot.send_message(
+                uid,
+                f"Выберите проект для приоритета 1 (самый желаемый):",
+                keyboard=self.project_priority_kb(projs, [])
+            )
+
         elif cmd == "complaint":
             if not p:
                 return self.bot.send_message(uid, "Сначала войдите.", keyboard=self.main_kb(role))
@@ -1635,6 +1874,26 @@ class CampBot:
                 kb.add_line()
                 kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
                 self.bot.send_message(uid, "Меню мероприятий:", keyboard=kb)
+
+            elif cmd == "projects":
+                kb = Keyboard(one_time=False, inline=False)
+                kb.add_button("Создать", color="primary", payload=json.dumps({"cmd": "create_project"}))
+                kb.add_button("Опубликовать", payload=json.dumps({"cmd": "publish_projects"}))
+                kb.add_line()
+                kb.add_button("Запустить регистрацию", color="positive", payload=json.dumps({"cmd": "start_project_reg"}))
+                kb.add_line()
+                if self.db.has_open_project_registrations():
+                    kb.add_button("Закрыть регистрацию", color="negative", payload=json.dumps({"cmd": "close_project_reg"}))
+                    kb.add_line()
+                kb.add_button("Список", payload=json.dumps({"cmd": "view_projects"}))
+                kb.add_button("Неопубликованные", payload=json.dumps({"cmd": "view_unpublished_projects"}))
+                kb.add_line()
+                kb.add_button("Удалить", color="negative", payload=json.dumps({"cmd": "delete_project"}))
+                kb.add_line()
+                kb.add_button("Записать участника", color="primary", payload=json.dumps({"cmd": "admin_reg_project"}))
+                kb.add_line()
+                kb.add_button("Назад", color="secondary", payload=json.dumps({"cmd": "back"}))
+                self.bot.send_message(uid, "Меню проектов:", keyboard=kb)
 
             elif cmd == "mini_courses":
                 kb = Keyboard(one_time=False, inline=False)
@@ -1876,6 +2135,94 @@ class CampBot:
                     if i < len(evts) - 1:
                         kb.add_line()
                 self.bot.send_message(uid, "Выберите мероприятие для удаления:", keyboard=kb)
+
+            # === Проекты ===
+            elif cmd == "create_project":
+                self._set_state(uid, "WAIT_PROJ_NAME")
+                self.bot.send_message(uid, "Введите название проекта:", keyboard=self.wait_kb())
+
+            elif cmd == "view_projects":
+                projs = self.db.get_all_projects()
+                if not projs:
+                    return self.bot.send_message(uid, "Нет проектов.", keyboard=self.main_kb(role))
+                lines = ["📋 Все проекты:"]
+                for proj in projs:
+                    status = "✅" if proj['is_published'] else "⬜"
+                    if proj['is_closed']:
+                        status = "🔒"
+                    lines.append(f"\n{status} {proj['name']}")
+                    lines.append(f"   📝 {proj['description']}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "view_unpublished_projects":
+                projs = self.db.get_unpublished_projects()
+                if not projs:
+                    return self.bot.send_message(uid, "Нет неопубликованных проектов.", keyboard=self.main_kb(role))
+                lines = ["📋 Неопубликованные проекты:"]
+                for proj in projs:
+                    lines.append(f"\n🔸 {proj['name']}")
+                    lines.append(f"   📝 {proj['description']}")
+                self.bot.send_message(uid, "\n".join(lines), keyboard=self.main_kb(role))
+
+            elif cmd == "publish_projects":
+                projs = self.db.publish_projects()
+                published_count = len(projs)
+                self.bot.send_message(uid, f"✅ Опубликовано: {published_count} проектов.", keyboard=self.main_kb(role))
+                if published_count > 0:
+                    participant_ids = self.db.get_all_participant_user_ids()
+                    for pid in participant_ids:
+                        if pid != uid:
+                            self.bot.send_message(
+                                pid,
+                                f"📋 Доступны новые проекты ({published_count} шт.)!\nНажмите «Выбрать проект» в меню, чтобы расставить приоритеты.",
+                                keyboard=self.main_kb('participant')
+                            )
+
+            elif cmd == "start_project_reg":
+                projs = self.db.start_project_registration()
+                count = len(projs)
+                self.bot.send_message(uid, f"✅ Регистрация запущена. Опубликовано проектов: {count}.", keyboard=self.main_kb(role))
+                if count > 0:
+                    participant_ids = self.db.get_all_participant_user_ids()
+                    for pid in participant_ids:
+                        if pid != uid:
+                            self.bot.send_message(
+                                pid,
+                                f"📋 Стартовала регистрация на проекты ({count} шт.)!\nНажмите «Выбрать проект» в меню, чтобы расставить приоритеты.",
+                                keyboard=self.main_kb('participant')
+                            )
+                else:
+                    self.bot.send_message(uid, "Нет проектов для регистрации. Сначала создайте проекты.", keyboard=self.main_kb(role))
+
+            elif cmd == "close_project_reg":
+                kb = Keyboard(inline=True)
+                kb.add_callback_button("Да, закрыть", color="negative", payload=json.dumps({"action": "confirm_close_project_reg"}))
+                kb.add_callback_button("Нет", color="secondary", payload=json.dumps({"action": "show_admin_projects"}))
+                self.bot.send_message(uid, "Вы уверены, что хотите закрыть регистрацию на проекты?\nВсе кнопки выбора проектов станут неактивны.", keyboard=kb)
+
+            elif cmd == "delete_project":
+                projs = self.db.get_unpublished_projects()
+                if not projs:
+                    return self.bot.send_message(uid, "Нет неопубликованных проектов для удаления.", keyboard=self.main_kb(role))
+                kb = Keyboard(inline=True)
+                for i, proj in enumerate(projs):
+                    kb.add_callback_button(
+                        proj['name'], color="negative",
+                        payload=json.dumps({"action": "confirm_delete_project", "project_id": proj['id']})
+                    )
+                    if i < len(projs) - 1:
+                        kb.add_line()
+                self.bot.send_message(uid, "Выберите проект для удаления:", keyboard=kb)
+
+            elif cmd == "admin_reg_project":
+                participants = self.db.get_all_participants()
+                if not participants:
+                    return self.bot.send_message(uid, "Нет участников.", keyboard=self.main_kb(role))
+                self.bot.send_message(
+                    uid,
+                    "Выберите участника для регистрации на проекты:",
+                    keyboard=self.admin_participant_kb(participants, 0, "admin_reg_project_pick", "admin_reg_project")
+                )
 
             elif cmd == "delete_mini_course":
                 mcs = self.db.get_unpublished_mini_courses()
@@ -2331,6 +2678,24 @@ class CampBot:
                 self.bot.send_message(uid, f"✅ Мероприятие создано (ID: {eid}). Опубликуйте через меню.", keyboard=self.main_kb(role))
             except ValueError:
                 self.bot.send_message(uid, "❌ Максимум должен быть >= минимума. Повторите:", keyboard=self.wait_kb())
+
+        # === FSM создания проекта ===
+        elif state == "WAIT_PROJ_NAME":
+            name = text.strip()
+            if not name:
+                return self.bot.send_message(uid, "❌ Название не может быть пустым. Введите название:", keyboard=self.wait_kb())
+            ctx["name"] = name
+            self._set_state(uid, "WAIT_PROJ_DESC", ctx)
+            self.bot.send_message(uid, "Введите описание проекта:", keyboard=self.wait_kb())
+
+        elif state == "WAIT_PROJ_DESC":
+            desc = text.strip()
+            if not desc:
+                return self.bot.send_message(uid, "❌ Описание не может быть пустым. Введите описание:", keyboard=self.wait_kb())
+            ctx["desc"] = desc
+            proj_id = self.db.create_project(ctx["name"], ctx["desc"])
+            self._clear_state(uid)
+            self.bot.send_message(uid, f"✅ Проект «{ctx['name']}» создан (ID: {proj_id}). Опубликуйте через меню.", keyboard=self.main_kb(role))
 
         # === FSM создания мини-курса ===
         elif state == "WAIT_MC_NAME":

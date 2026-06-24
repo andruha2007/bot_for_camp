@@ -1,5 +1,5 @@
 # database.py
-import logging, random, sqlite3, string
+import logging, random, sqlite3, string, datetime
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -79,6 +79,20 @@ class DatabaseManager:
 
                 CREATE TABLE IF NOT EXISTS complaints (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, participant_id INTEGER, message TEXT, is_resolved BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT DEFAULT '',
+                    is_published BOOLEAN DEFAULT 0, is_active BOOLEAN DEFAULT 1,
+                    is_closed BOOLEAN DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    published_at TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS project_priorities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL, participant_id INTEGER NOT NULL,
+                    priority INTEGER NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(project_id, participant_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS fair_settings (
@@ -223,6 +237,14 @@ class DatabaseManager:
         mc_cols3 = {row["name"] for row in conn.execute("PRAGMA table_info(mini_courses)")}
         if "is_closed" not in mc_cols3:
             conn.execute("ALTER TABLE mini_courses ADD COLUMN is_closed BOOLEAN DEFAULT 0")
+
+        proj_cols = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
+        if "is_published" not in proj_cols:
+            conn.execute("ALTER TABLE projects ADD COLUMN is_published BOOLEAN DEFAULT 0")
+        if "is_closed" not in proj_cols:
+            conn.execute("ALTER TABLE projects ADD COLUMN is_closed BOOLEAN DEFAULT 0")
+        if "published_at" not in proj_cols:
+            conn.execute("ALTER TABLE projects ADD COLUMN published_at TIMESTAMP")
 
         reg_cols = {row["name"] for row in conn.execute("PRAGMA table_info(event_registrations)")}
         if "captain_id" not in reg_cols:
@@ -835,11 +857,14 @@ class DatabaseManager:
             row = conn.execute("SELECT balance FROM participants WHERE id=?", (pid,)).fetchone()
             return row['balance'] if row else 0
 
+    def _moscow_now(self) -> str:
+        return (datetime.datetime.utcnow() + datetime.timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+
     def add_balance_to_participant(self, participant_id: int, amount: int, description: str = "Пополнение баланса"):
         with self._get_conn() as conn:
             conn.execute("UPDATE participants SET balance = balance + ? WHERE id=?", (amount, participant_id))
-            conn.execute("INSERT INTO balance_history (participant_id, amount, description) VALUES (?, ?, ?)",
-                         (participant_id, amount, description))
+            conn.execute("INSERT INTO balance_history (participant_id, amount, description, created_at) VALUES (?, ?, ?, ?)",
+                         (participant_id, amount, description, self._moscow_now()))
 
     def create_event(self, name: str, desc: str, min_size: int, max_size: int, is_fair: bool = False) -> int:
         with self._get_conn() as conn:
@@ -1156,8 +1181,8 @@ class DatabaseManager:
             if not row or row['balance'] < amount:
                 return False
             conn.execute("UPDATE participants SET balance = balance - ? WHERE id=?", (amount, participant_id))
-            conn.execute("INSERT INTO balance_history (participant_id, amount, description) VALUES (?, ?, ?)",
-                         (participant_id, -amount, description))
+            conn.execute("INSERT INTO balance_history (participant_id, amount, description, created_at) VALUES (?, ?, ?, ?)",
+                         (participant_id, -amount, description, self._moscow_now()))
             return True
 
     def get_event_teams_list(self, event_id: int) -> List[Dict]:
@@ -2029,3 +2054,107 @@ class DatabaseManager:
     def add_time_slot(self, mc_id: int, time: str, max_participants: int = 0):
         with self._get_conn() as conn:
             conn.execute("INSERT OR IGNORE INTO time_slots (mini_course_id, time, max_participants) VALUES (?, ?, ?)", (mc_id, time, max_participants))
+
+    # === Projects ===
+    def create_project(self, name: str, description: str) -> int:
+        with self._get_conn() as conn:
+            cur = conn.execute("INSERT INTO projects (name, description) VALUES (?, ?)", (name, description))
+            return cur.lastrowid
+
+    def get_project(self, project_id: int) -> Optional[Dict]:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_all_projects(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()]
+
+    def get_published_projects(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM projects WHERE is_published=1 AND is_closed=0 ORDER BY created_at").fetchall()]
+
+    def get_unpublished_projects(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM projects WHERE is_published=0 ORDER BY created_at DESC").fetchall()]
+
+    def publish_projects(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM projects WHERE is_published=0 AND is_active=1").fetchall()
+            for r in rows:
+                conn.execute("UPDATE projects SET is_published=1, published_at=datetime('now') WHERE id=?", (r['id'],))
+            return [dict(r) for r in rows]
+
+    def delete_project(self, project_id: int):
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM project_priorities WHERE project_id=?", (project_id,))
+            conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
+
+    def has_open_project_registrations(self) -> bool:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) as cnt FROM projects WHERE is_published=1 AND is_closed=0").fetchone()
+            return row['cnt'] > 0
+
+    def has_project_registration_been_closed(self) -> bool:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) as cnt FROM projects WHERE is_closed=1").fetchone()
+            return row['cnt'] > 0
+
+    def start_project_registration(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM project_priorities")
+            conn.execute("UPDATE projects SET is_closed=0 WHERE is_published=1")
+            conn.execute("UPDATE projects SET is_published=1, published_at=datetime('now') WHERE is_published=0 AND is_active=1")
+            rows = conn.execute("SELECT * FROM projects WHERE is_published=1 AND is_closed=0 ORDER BY created_at").fetchall()
+            return [dict(r) for r in rows]
+
+    def close_project_registration(self) -> List[Dict]:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE projects SET is_closed=1 WHERE is_published=1")
+            rows = conn.execute("""
+                SELECT pp.participant_id, p.last_name, p.first_name, p.user_id,
+                       pp.project_id, pr.name as project_name, pp.priority
+                FROM project_priorities pp
+                JOIN participants p ON p.id = pp.participant_id
+                JOIN projects pr ON pr.id = pp.project_id
+                ORDER BY pp.participant_id, pp.priority
+            """).fetchall()
+            participants_choices = {}
+            for r in rows:
+                pid = r['participant_id']
+                if pid not in participants_choices:
+                    participants_choices[pid] = {
+                        'participant_id': pid,
+                        'last_name': r['last_name'],
+                        'first_name': r['first_name'],
+                        'user_id': r['user_id'],
+                        'choices': []
+                    }
+                participants_choices[pid]['choices'].append({
+                    'project_id': r['project_id'],
+                    'project_name': r['project_name'],
+                    'priority': r['priority']
+                })
+            return list(participants_choices.values())
+
+    def save_project_priorities(self, participant_id: int, priorities: Dict[int, int]):
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM project_priorities WHERE participant_id=?", (participant_id,))
+            for project_id, priority in priorities.items():
+                conn.execute(
+                    "INSERT INTO project_priorities (project_id, participant_id, priority) VALUES (?, ?, ?)",
+                    (project_id, participant_id, priority)
+                )
+
+    def get_participant_project_choices(self, participant_id: int) -> List[Dict]:
+        with self._get_conn() as conn:
+            return [dict(r) for r in conn.execute("""
+                SELECT pp.*, pr.name as project_name FROM project_priorities pp
+                JOIN projects pr ON pr.id = pp.project_id
+                WHERE pp.participant_id=? ORDER BY pp.priority
+            """, (participant_id,)).fetchall()]
+
+    def has_participant_submitted_priorities(self, participant_id: int) -> bool:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) as cnt FROM project_priorities WHERE participant_id=?", (participant_id,)).fetchone()
+            return row['cnt'] > 0

@@ -2155,3 +2155,68 @@ requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.vk.com', port
 2026-06-23 23:55:53,315 [INFO] bot_logic: Admin sync complete
 2026-06-23 23:55:53,316 [INFO] __main__: Bot uspeshno zapushchen!
 2026-06-23 23:57:34,335 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 00:33:48,130 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 00:33:49,490 [INFO] bot_logic: Admin sync complete
+2026-06-24 00:33:49,491 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 00:46:12,362 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 00:46:18,536 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 00:46:19,449 [INFO] bot_logic: Admin sync complete
+2026-06-24 00:46:19,452 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 00:46:59,666 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 00:47:32,398 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 00:47:33,609 [INFO] bot_logic: Admin sync complete
+2026-06-24 00:47:33,622 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 00:49:20,945 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 00:49:35,833 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 00:49:41,915 [INFO] bot_logic: Admin sync complete
+2026-06-24 00:49:41,923 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:03:35,248 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:03:39,066 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:03:39,069 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:04:07,226 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:04:11,495 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:04:13,261 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:04:13,263 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:08:58,888 [ERROR] bot_logic: Callback error: Max 6 lines for inline keyboard
+Traceback (most recent call last):
+  File "C:\Code_Territory\Python_Code\bot_for_camp\bot_logic.py", line 1372, in _handle_callback_safe
+    kb.add_line()
+    ~~~~~~~~~~~^^
+  File "C:\Users\andru\AppData\Roaming\Python\Python314\site-packages\vk_api\keyboard.py", line 298, in add_line
+    raise ValueError(f'Max {MAX_INLINE_LINES} lines for inline keyboard')
+ValueError: Max 6 lines for inline keyboard
+2026-06-24 10:20:07,920 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:20:11,807 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:20:13,336 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:20:13,339 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:20:51,031 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:21:21,766 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:21:23,079 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:21:23,081 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:31:58,979 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:32:09,491 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:32:09,535 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:32:19,854 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:32:20,916 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:32:20,918 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:32:51,502 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:34:22,741 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:34:23,671 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:34:23,673 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 10:38:15,613 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 10:39:18,432 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 10:39:19,514 [INFO] bot_logic: Admin sync complete
+2026-06-24 10:39:19,516 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 11:03:37,923 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 11:03:53,922 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 11:03:55,308 [INFO] bot_logic: Admin sync complete
+2026-06-24 11:03:55,310 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 11:04:31,338 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 11:04:34,609 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 11:04:35,791 [INFO] bot_logic: Admin sync complete
+2026-06-24 11:04:35,794 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 11:09:56,596 [INFO] __main__: Bot ostanovlen po zaprosu.
+2026-06-24 11:10:00,394 [INFO] __main__: Baza dannyh podklyuchena
+2026-06-24 11:10:01,420 [INFO] bot_logic: Admin sync complete
+2026-06-24 11:10:01,423 [INFO] __main__: Bot uspeshno zapushchen!
+2026-06-24 11:12:09,611 [INFO] __main__: Bot ostanovlen po zaprosu.
